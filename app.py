@@ -3,149 +3,122 @@ import pandas as pd
 from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
 
-# ================= 1. CONFIGURATION =================
+# ================= 1. SETTINGS =================
 MONTHLY_MAINT = 2100
 st.set_page_config(page_title="DBE Society Management", layout="wide")
+
+# This is the official way to connect
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# ================= 2. HELPERS =================
-def clean_numeric(value):
-    """Safely converts strings like '₹ 1,200.00' to float."""
-    if pd.isna(value) or value == "": return 0.0
-    if isinstance(value, (int, float)): return float(value)
-    clean_str = str(value).replace('₹', '').replace(',', '').replace(' ', '').strip()
-    try:
-        return float(clean_str)
-    except:
-        return 0.0
-
-def clean_id(value):
-    """Turns 'A-101' into 'A101' for matching."""
-    return "".join(filter(str.isalnum, str(value))).upper()
-
+# ================= 2. THE "NO-FAIL" LOADER =================
 @st.cache_data(ttl=60)
-def load_data_robust(worksheet_name):
-    """
-    Attempts to read the sheet. If it fails or returns Owners 
-    instead of Collections, it uses a manual URL fallback.
-    """
+def load_sheet_data(tab_name):
     try:
-        # Method 1: Standard library read
-        df = conn.read(worksheet=worksheet_name)
-        # Clean headers immediately
+        # We use the built-in worksheet parameter
+        df = conn.read(worksheet=tab_name)
+        if df.empty:
+            return pd.DataFrame()
+        # Clean headers: "Opening Due" -> "opening_due"
         df.columns = df.columns.astype(str).str.lower().str.strip().str.replace(" ", "_")
         return df
     except Exception as e:
-        st.sidebar.error(f"Error loading {worksheet_name}: {e}")
+        st.sidebar.error(f"Could not find tab '{tab_name}'")
         return pd.DataFrame()
 
-# ================= 3. SIDEBAR & AUTH =================
+# ================= 3. SIDEBAR & REFRESH =================
 with st.sidebar:
-    st.header("🔐 Admin Access")
+    st.header("🔐 Admin Panel")
     pwd = st.text_input("Password", type="password")
-    is_admin = (pwd == st.secrets.get("admin_password", ""))
+    is_admin = (pwd == st.secrets.get("admin_password", "admin123"))
     
-    if st.button("🔄 Force Refresh Data"):
+    if st.button("🔄 Clear Cache & Refresh"):
         st.cache_data.clear()
         st.rerun()
 
-    # --- DEBUG SECTION ---
-    st.divider()
-    st.write("📂 **Sheet Diagnostics**")
-    try:
-        # This helps you check if the tab names are correct
-        df_owners = load_data_robust("Owners")
-        df_coll = load_data_robust("Collections")
-        st.write(f"Owners Tab: {'✅ Found' if not df_owners.empty else '❌ Empty'}")
-        st.write(f"Collections Tab: {'✅ Found' if not df_coll.empty else '❌ Empty'}")
-        if not df_coll.empty:
-            st.write(f"Coll Columns: {list(df_coll.columns[:3])}...")
-    except:
-        st.write("Connection pending...")
+# ================= 4. LOAD DATA =================
+df_owners = load_sheet_data("Owners")
+df_coll = load_sheet_data("Collections")
+df_exp = load_sheet_data("Expenses")
 
-# ================= 4. MAIN APP =================
-tab1, tab2, tab3 = st.tabs(["💰 Maintenance", "💸 Expenses", "📊 Full Log"])
-
-# Load Expenses (Assuming tab name is 'Expenses')
-df_exp = load_data_robust("Expenses")
+# ================= 5. MAIN INTERFACE =================
+tab1, tab2, tab3 = st.tabs(["💰 Maintenance", "📋 All Records", "💸 Expenses"])
 
 with tab1:
     if df_owners.empty or df_coll.empty:
-        st.error("⚠️ Could not load data. Please ensure your Google Sheet has tabs named exactly 'Owners' and 'Collections'.")
-        st.info("Check the sidebar 'Sheet Diagnostics' for details.")
+        st.error("🛑 Data Loading Error")
+        st.info("Ensure your Google Sheet tabs are named exactly: **Owners**, **Collections**, and **Expenses**.")
+        # Diagnostics
+        if st.checkbox("Show Debug Info"):
+            st.write("Current Owners columns:", list(df_owners.columns) if not df_owners.empty else "Empty")
+            st.write("Current Collections columns:", list(df_coll.columns) if not df_coll.empty else "Empty")
     else:
-        # Dynamic Column Finding
-        f_col = next((c for c in df_owners.columns if 'flat' in c), "flat")
-        n_col = next((c for c in df_owners.columns if 'owner' in c or 'name' in c), "owner")
-        d_col = next((c for c in df_owners.columns if 'due' in c), "opening_due")
+        # Selection
+        selected_flat = st.selectbox("Select Flat", sorted(df_owners['flat'].unique()))
+        owner_row = df_owners[df_owners['flat'] == selected_flat].iloc[0]
+        
+        st.info(f"👤 **Owner:** {owner_row['owner']}")
 
-        col_sel, col_info = st.columns([2, 1])
-        with col_sel:
-            selected_flat = st.selectbox("Select Flat", sorted(df_owners[f_col].unique()))
-            owner_row = df_owners[df_owners[f_col] == selected_flat].iloc[0]
-        with col_info:
-            st.info(f"👤 **Owner:** {owner_row.get(n_col, 'N/A')}")
+        # --- MATH ENGINE ---
+        # Calculation for Feb 2026 (14 months from Jan 2025)
+        total_months = 14 
+        
+        # 1. Opening Due (Clean ₹ and commas)
+        raw_opening = str(owner_row.get('opening_due', '0'))
+        clean_opening = "".join(c for c in raw_opening if c.isdigit() or c == '.')
+        opening_due = float(clean_opening) if clean_opening else 0.0
 
-        # --- CALCULATION (Jan 2025 to Feb 2026) ---
-        today = datetime.now()
-        # Ensure we are in Feb 2026 for this calculation
-        calc_year, calc_month = 2026, 2
-        total_months = (calc_year - 2025) * 12 + calc_month # Result: 14
-        
-        opening_due = clean_numeric(owner_row.get(d_col, 0))
-        
-        # Calculate Paid
-        total_paid = 0.0
-        c_amt_col = next((c for c in df_coll.columns if 'received' in c or 'amount' in c), None)
-        c_flat_col = next((c for c in df_coll.columns if 'flat' in c), None)
-        
-        if c_amt_col and c_flat_col:
-            target_id = clean_id(selected_flat)
-            df_coll['match_id'] = df_coll[c_flat_col].apply(clean_id)
-            matched = df_coll[df_coll['match_id'] == target_id]
-            total_paid = matched[c_amt_col].apply(clean_numeric).sum()
-        
+        # 2. Total Paid (Search Collections)
+        # We search for the flat and sum the 'amount_received' column
+        payments = df_coll[df_coll['flat'] == selected_flat]
+        total_paid = pd.to_numeric(payments['amount_received'], errors='coerce').sum()
+
+        # 3. Final Calculation
         accrued = total_months * MONTHLY_MAINT
         current_due = (opening_due + accrued) - total_paid
 
-        # Display
-        st.metric("Current Outstanding Due", f"₹ {int(current_due):,}")
+        # --- DISPLAY ---
+        st.metric("Total Outstanding Due", f"₹ {int(current_due):,}")
         
-        col1, col2, col3 = st.columns(3)
-        col1.write(f"**Total Accrued (14m):** ₹{int(accrued):,}")
-        col2.write(f"**Total Paid:** ₹{int(total_paid):,}")
-        col3.write(f"**Opening Balance:** ₹{int(opening_due):,}")
+        c1, c2, c3 = st.columns(3)
+        c1.write(f"**Expected (14m):** ₹{int(accrued):,}")
+        c2.write(f"**Total Paid:** ₹{int(total_paid):,}")
+        c3.write(f"**Opening:** ₹{int(opening_due):,}")
 
         # --- ADMIN PAYMENT ENTRY ---
         if is_admin:
             st.divider()
-            with st.form("pay_entry", clear_on_submit=True):
-                st.subheader("Add Payment")
-                a, b, c = st.columns(3)
-                p_date = a.date_input("Date")
-                p_amt = b.number_input("Amount", value=2100)
-                p_mths = c.text_input("Months (e.g. Feb-26)")
-                if st.form_submit_button("Record Payment"):
-                    # Logic to save to Google Sheets
-                    new_data = pd.DataFrame([{
-                        "date": p_date.strftime("%d-%m-%Y"),
+            with st.form("new_pay"):
+                st.subheader("Add New Payment")
+                f1, f2, f3 = st.columns(3)
+                p_date = f1.date_input("Date")
+                p_amt = f2.number_input("Amount", value=2100)
+                p_mths = f3.text_input("Month(s)")
+                if st.form_submit_button("Save Payment"):
+                    new_entry = pd.DataFrame([{
+                        "date": p_date.strftime("%d-%b-%Y"),
                         "flat": selected_flat,
-                        "owner": owner_row[n_col],
+                        "owner": owner_row['owner'],
                         "months_paid": p_mths,
                         "amount_received": p_amt,
                         "mode": "Online",
                         "bill_no": ""
                     }])
-                    updated_df = pd.concat([df_coll, new_data], ignore_index=True).drop(columns=['match_id'], errors='ignore')
+                    updated_df = pd.concat([df_coll, new_entry], ignore_index=True)
+                    # Sync back to Google Sheets
                     conn.update(worksheet="Collections", data=updated_df)
                     st.cache_data.clear()
-                    st.success("Payment saved!")
+                    st.success("Payment recorded!")
                     st.rerun()
 
 with tab2:
-    st.subheader("Expense Management")
-    st.dataframe(df_exp, use_container_width=True)
-
-with tab3:
     st.subheader("Collection History")
     st.dataframe(df_coll, use_container_width=True)
+    st.subheader("Owners List")
+    st.dataframe(df_owners, use_container_width=True)
+
+with tab3:
+    st.subheader("Expense Log")
+    if not df_exp.empty:
+        st.dataframe(df_exp, use_container_width=True)
+        total_exp = pd.to_numeric(df_exp['amount'], errors='coerce').sum()
+        st.metric("Total Expenses", f"₹ {int(total_exp):,}")
