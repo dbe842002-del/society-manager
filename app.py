@@ -38,58 +38,61 @@ tab1, tab2, tab3 = st.tabs(["💰 Maintenance", "💸 Expenses", "📊 Master Re
 
 # --- TAB 1: MAINTENANCE & PAYMENTS ---
 with tab1:
+    # 1. Load data with forced fresh fetch
     df_owners = load_sheet("Owners")
     df_coll = load_sheet("Collections")
 
+    # 2. Safety Check: Is 'Collections' actually loading the 'Owners' data?
+    # If the app accidentally loads the same sheet twice, we'll fix the reference
+    if not df_coll.empty and 'opening due' in df_coll.columns.str.lower():
+        st.warning("⚠️ Data Sync Error: App is reading 'Owners' instead of 'Collections'.")
+        # This usually means the worksheet name in load_sheet doesn't match the tab name exactly
+        st.info("Please ensure your Google Sheet has a tab named exactly 'Collections' (case sensitive).")
+
     if not df_owners.empty:
-        # 1. Clean column names
         df_owners.columns = df_owners.columns.str.strip().str.lower()
-        
-        # 2. Selection UI
         selected_flat = st.selectbox("Select Flat", df_owners['flat'].unique())
         owner_row = df_owners[df_owners['flat'] == selected_flat].iloc[0]
         
         st.write(f"**Owner:** {owner_row.get('owner', 'N/A')}")
 
-        # --- 3. SAFE CALCULATION ENGINE ---
+        # --- 3. DUES CALCULATION ---
         today = datetime.now()
         total_months = (today.year - 2025) * 12 + today.month
         
-        # FIX: Find the 'due' column even if it's named 'due' or 'opening due'
-        # We look for any column that contains the word 'due'
+        # Look for 'due' or 'opening' in Owners sheet
         due_col = next((c for c in df_owners.columns if 'due' in c), None)
+        opening_due = pd.to_numeric(owner_row[due_col], errors='coerce') if due_col else 0
+        if pd.isna(opening_due): opening_due = 0
         
-        if due_col:
-            opening_due = pd.to_numeric(owner_row[due_col], errors='coerce') or 0
-        else:
-            st.error("Column 'due' not found in Owners sheet!")
-            opening_due = 0
-        
-       # --- GET PAID AMOUNT FROM COLLECTIONS ---
+        # --- 4. PAID CALCULATION ---
         paid_amt = 0
         if not df_coll.empty:
-            # 1. Clean Collections column names
             df_coll.columns = df_coll.columns.str.strip()
             
-            # 2. Find the "Flat" column (case-insensitive)
+            # Find the correct columns in Collections
             c_flat_col = next((c for c in df_coll.columns if c.lower() == 'flat'), None)
-            
-            # 3. Find the "Amount" column (looks for 'received' or 'amount')
+            # Specifically looking for your amount column
             c_amt_col = next((c for c in df_coll.columns if 'received' in c.lower() or 'amount' in c.lower()), None)
-            
+
             if c_flat_col and c_amt_col:
-                # Filter by flat (case-insensitive match)
+                # Filter payments for this flat
                 paid_rows = df_coll[df_coll[c_flat_col].astype(str).str.upper() == str(selected_flat).upper()]
-                
-                # Convert to numeric and sum
                 paid_amt = pd.to_numeric(paid_rows[c_amt_col], errors='coerce').sum()
             else:
-                st.warning(f"Could not find 'Flat' or 'amount_received' in Collections. Found: {list(df_coll.columns)}")
+                # If we are in this block, the app is likely looking at the wrong tab
+                st.error(f"Sheet Layout Error: 'Collections' tab headers are missing or incorrect. Found: {list(df_coll.columns)}")
 
-        # --- FINAL CALCULATION ---
-        current_due = (opening_due + (total_months * MONTHLY_MAINT)) - paid_amt
+        # --- 5. RESULT ---
+        current_due = (opening_due + (total_months * 2100)) - paid_amt
         
-        st.metric("Outstanding Balance", f"₹ {current_due:,.0f}")
+        # Display with large font
+        st.metric("Total Outstanding", f"₹ {current_due:,.0f}")
+        
+        with st.expander("🔍 See Math"):
+            st.write(f"Opening Due: ₹{opening_due:,.0f}")
+            st.write(f"Maintenance (Jan 2025 to {today.strftime('%b %Y')}): ₹{total_months * 2100:,.0f}")
+            st.write(f"Total Paid: ₹{paid_amt:,.0f}")
                     
 
 # --- TAB 2: EXPENSES ---
@@ -124,6 +127,7 @@ with tab2:
 # --- TAB 3: RECORDS ---
 with tab3:
     st.dataframe(load_sheet("Collections"), width="stretch")
+
 
 
 
