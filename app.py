@@ -70,12 +70,12 @@ with tab1:
         
         st.info(f"🔍 Using: flat='{flat_col}', amount='{amount_col}'")
         
-        if flat_col in df_coll.columns and amount_col in df_coll.columns:
-            key = str(selected_flat).upper()
-            flat_payments = df_coll[
-                df_coll[flat_col].astype(str).str.strip().str.upper().str.replace('-','').str.contains(key.replace('-',''))
-                | df_coll[flat_col].astype(str).str.strip().str.upper() == key
-            ]
+        flat_payments = df_coll[
+    df_coll[flat_col].astype(str).str.strip().str.upper().str.replace('-','').str.replace(' ','').str.contains(
+        str(selected_flat).replace('-','').replace(' ','').upper()
+    )
+]
+
             
             if not flat_payments.empty:
                 total_paid_amount = float(pd.to_numeric(flat_payments[amount_col], errors='coerce').sum())
@@ -131,5 +131,6 @@ with tab3:
     # Expense form here (same structure)
     st.dataframe(df_exp, use_container_width=True)
 with tab4: st.dataframe(df_coll, use_container_width=True)
+
 
 
