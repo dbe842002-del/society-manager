@@ -58,18 +58,20 @@ with tab1:
             st.info(f"👤 **Owner:** {owner_row.get(name_col, 'N/A')}")
 
         # 2. Math Engine
+        # --- 2. MATH ENGINE (FAILSAFE VERSION) ---
         today = datetime.now()
         # Jan 2025 to Feb 2026 = 14 months
         total_months = (today.year - 2025) * 12 + today.month
         
-        # Safe Opening Due from Owners
+        # 1. Safe Opening Due
         due_col = next((c for c in df_owners.columns if 'due' in c), None)
-        opening_due = pd.to_numeric(owner_row.get(due_col, 0), errors='coerce') or 0.0
+        raw_opening = pd.to_numeric(owner_row.get(due_col, 0), errors='coerce')
+        # SHIELD: If opening is empty/NaN, make it 0
+        opening_due = float(raw_opening) if pd.notnull(raw_opening) else 0.0
 
-        # Safe Paid Amount from Collections
+        # 2. Safe Paid Amount
         total_paid = 0.0
         if not df_coll.empty:
-            # Super-matching (A-101 matches a 101)
             def clean_id(x): return "".join(filter(str.isalnum, str(x))).upper()
             
             c_flat = next((c for c in df_coll.columns if 'flat' in c), None)
@@ -81,21 +83,21 @@ with tab1:
                 df_c['match_key'] = df_c[c_flat].apply(clean_id)
                 
                 matched_payments = df_c[df_c['match_key'] == target_id]
-                total_paid = pd.to_numeric(matched_payments[c_amt], errors='coerce').sum()
+                # SHIELD: If payments are missing, sum returns 0 instead of NaN
+                raw_paid = pd.to_numeric(matched_payments[c_amt], errors='coerce').sum()
+                total_paid = float(raw_paid) if pd.notnull(raw_paid) else 0.0
 
-        # Final Logic
-        accrued = total_months * MONTHLY_MAINT
+        # 3. Final Logic with Protection
+        accrued = float(total_months * MONTHLY_MAINT)
         current_due = (opening_due + accrued) - total_paid
 
-        # 3. Display Results
-        st.metric("Total Outstanding Due", f"₹ {int(current_due):,}")
-        
-        with st.expander("🔍 Calculation Details"):
-            st.write(f"Accrual: Jan 2025 to {today.strftime('%b %Y')} ({total_months} months)")
-            st.write(f"Expected: {total_months} × {MONTHLY_MAINT} = ₹{int(accrued):,}")
-            st.write(f"Total Paid (as per Records): ₹{int(total_paid):,}")
-            st.write(f"Opening Balance (Jan 25): ₹{int(opening_due):,}")
-
+        # --- 3. DISPLAY RESULTS (WITH INT CONVERSION SAFETY) ---
+        # We check if current_due is a valid number before converting to int
+        if pd.notnull(current_due):
+            st.metric("Total Outstanding Due", f"₹ {int(current_due):,}")
+        else:
+            st.metric("Total Outstanding Due", "₹ 0")
+            st.error("Data Error: Calculation resulted in an invalid number. Check your Google Sheet for empty rows.")
         # 4. Admin Entry Form
         if is_admin:
             st.divider()
@@ -157,3 +159,4 @@ with tab3:
 with tab4:
     st.subheader("Full Collection History")
     st.dataframe(df_coll, use_container_width=True)
+
