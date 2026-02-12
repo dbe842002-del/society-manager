@@ -1,4 +1,7 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection  # <--- MAKE SURE THIS IS HERE
+import pandas as pd
+import io
 
 # Replace hardcoded values with st.secrets
 ADMIN_PASSWORD = st.secrets["admin_password"]
@@ -104,4 +107,5 @@ if is_admin:
     st.sidebar.subheader("Quick Receipt")
     if st.sidebar.button("Generate Last Receipt"):
         # Logic to get last row and generate PDF
+
         st.sidebar.write("Generating...")
