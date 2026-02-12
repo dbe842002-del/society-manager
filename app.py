@@ -23,12 +23,18 @@ st.set_page_config(page_title="Society Management Admin", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data(worksheet_name):
+    # This method is the 'Old Reliable'
+    # It turns the sheet into a direct CSV download link
     try:
-        # Standard connection using the URL from secrets
-        df = conn.read(spreadsheet=SHEET_URL, worksheet=worksheet_name, ttl=0)
-        return df
+        # 1. Clean the base URL
+        base = SHEET_URL.split("/edit")[0]
+        # 2. Create a direct CSV export link for the specific tab
+        final_url = f"{base}/export?format=csv&sheet={worksheet_name}"
+        # 3. Read it with standard pandas
+        return pd.read_csv(final_url)
     except Exception as e:
-        st.error(f"⚠️ Could not find the '{worksheet_name}' tab.")
+        st.error(f"⚠️ Connection Error: {e}")
+        # Return empty data so the app doesn't turn red
         return pd.DataFrame(columns=["flat", "owner", "due"])
 
 def update_db(df, worksheet):
@@ -130,5 +136,6 @@ with tab3:
     else:
         st.write(f"### View {dataset} Table")
         st.dataframe(df, use_container_width=True)
+
 
 
