@@ -12,19 +12,7 @@ st.set_page_config(page_title="DBE Society Management", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_sheet(name):
-    try:
-        # Attempt 1: Standard library read
-        df = conn.read(worksheet=name, ttl=0)
-        return df
-    except Exception:
-        try:
-            # Attempt 2: Fallback to the working CSV method
-            base_url = st.secrets["connections"]["gsheets"]["spreadsheet"].split("/edit")[0]
-            csv_url = f"{base_url}/export?format=csv&sheet={name}"
-            return pd.read_csv(csv_url)
-        except Exception as e:
-            st.error(f"Error: {e}")
-            return pd.DataFrame()
+    return conn.read(worksheet=name, ttl=0) # ttl=0 ensures fresh data on every write
 
 # --- 3. AUTHENTICATION ---
 with st.sidebar:
@@ -131,5 +119,3 @@ with tab2:
 # --- TAB 3: RECORDS ---
 with tab3:
     st.dataframe(load_sheet("Collections"), width="stretch")
-
-
