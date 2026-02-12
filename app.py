@@ -38,62 +38,51 @@ with tab1:
     df_coll = safe_read_gsheet("Collections")
     
     if df_owners.empty:
-        st.error("Owners sheet is empty or missing!")
+        st.error("Owners sheet is empty!")
         st.stop()
 
-    # --- 1. Selection ---
-    flat_col = next((c for c in df_owners.columns if 'flat' in c), df_owners.columns[0])
-    selected_flat = st.selectbox("Select Flat", sorted(df_owners[flat_col].unique()))
-    owner_row = df_owners[df_owners[flat_col] == selected_flat].iloc[0]
+    # 1. Select Flat
+    flat_col_o = next((c for c in df_owners.columns if 'flat' in c), df_owners.columns[0])
+    selected_flat = st.selectbox("Select Flat Number", sorted(df_owners[flat_col_o].unique()))
+    owner_row = df_owners[df_owners[flat_col_o] == selected_flat].iloc[0]
 
-    # --- 2. The Math Engine ---
+    # 2. Math Setup
     today = datetime.now()
-    total_months = (today.year - 2025) * 12 + today.month # Jan 2025 to now
+    total_months = (today.year - 2025) * 12 + today.month
     
-    # Get Opening Due
+    # Opening Due
     due_col = next((c for c in df_owners.columns if 'due' in c), None)
-    opening_due = pd.to_numeric(owner_row.get(due_col, 0), errors='coerce')
-    opening_due = 0.0 if pd.isna(opening_due) else float(opening_due)
+    opening_due = pd.to_numeric(owner_row.get(due_col, 0), errors='coerce') or 0.0
 
-    # --- 3. THE FIX: Aggressive Payment Search ---
+    # 3. Aggressive Collection Lookup
     total_paid = 0.0
     if not df_coll.empty:
-        # Find headers regardless of capitalization
-        c_flat_col = next((c for c in df_coll.columns if 'flat' in c), None)
-        c_amt_col = next((c for c in df_coll.columns if 'received' in c or 'amount' in c), None)
+        # SEARCHING FOR COLUMNS
+        # We look for ANY column containing 'flat' and ANY containing 'received' or 'amount'
+        c_flat = next((c for c in df_coll.columns if 'flat' in c.lower()), None)
+        c_amt = next((c for c in df_coll.columns if 'received' in c.lower() or 'amount' in c.lower()), None)
 
-        if c_flat_col and c_amt_col:
-            # CLEANING: Remove spaces, dashes, dots. "A-101" -> "A101"
-            def ultra_clean(x): return "".join(filter(str.isalnum, str(x))).upper()
+        if c_flat and c_amt:
+            # Clean matching (A-101 -> A101)
+            def simple_clean(x): return "".join(filter(str.isalnum, str(x))).upper()
             
-            target_id = ultra_clean(selected_flat)
-            df_coll['match_id'] = df_coll[c_flat_col].apply(ultra_clean)
+            target = simple_clean(selected_flat)
+            df_coll['temp_id'] = df_coll[c_flat].apply(simple_clean)
             
-            # Filter rows
-            matched_rows = df_coll[df_coll['match_id'] == target_id]
-            
-            # Sum the money
-            paid_series = pd.to_numeric(matched_rows[c_amt_col], errors='coerce').fillna(0)
-            total_paid = float(paid_series.sum())
-
-            # --- DEBUG BLOCK (Check if this appears) ---
-            if total_paid == 0:
-                with st.expander("⚠️ Diagnostic: Why is Total Paid 0?"):
-                    st.write(f"Looking for Flat ID: `{target_id}`")
-                    st.write("First 5 Flat IDs found in your Collections sheet:")
-                    st.write(df_coll['match_id'].head().tolist())
-                    st.write(f"Column used for Amount: `{c_amt_col}`")
+            matched = df_coll[df_coll['temp_id'] == target]
+            total_paid = pd.to_numeric(matched[c_amt], errors='coerce').sum()
         else:
-            st.error("Could not find 'Flat' or 'Amount' columns in Collections tab!")
+            # THIS IS YOUR ERROR: Let's see what the columns actually are
+            st.warning(f"Column Mismatch! The app sees these headers in Collections: {list(df_coll.columns)}")
+            st.info("Ensure your 'Collections' sheet has headers in the VERY FIRST ROW.")
 
-    # --- 4. Final Display ---
-    expected_accrual = total_months * MONTHLY_MAINT
-    current_due = (opening_due + expected_accrual) - total_paid
+    # 4. Final Calculation
+    accrued = total_months * MONTHLY_MAINT
+    current_due = (opening_due + accrued) - total_paid
 
-    # Metric Display
-    st.metric("Total Outstanding Due", f"₹ {int(current_due):,}", delta=f"Paid: ₹{int(total_paid)}")
+    st.metric("Total Outstanding Due", f"₹ {int(current_due):,}")
+    st.caption(f"Accrued: {accrued} | Paid: {total_paid} | Opening: {opening_due}")
     
-    st.info(f"Summary: Expected (₹{int(expected_accrual)}) - Paid (₹{int(total_paid)}) + Opening (₹{int(opening_due)})")
 # --- OTHER TABS ---
 with tab2:
     st.dataframe(df_owners, use_container_width=True)
@@ -102,4 +91,5 @@ with tab3:
     st.dataframe(df_exp, use_container_width=True)
 with tab4:
     st.dataframe(df_coll, use_container_width=True)
+
 
