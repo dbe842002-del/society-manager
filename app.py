@@ -55,6 +55,16 @@ else:
 # ================= 4. MAIN INTERFACE =================
 st.title("🏢 Society Management Portal")
 
+# --- DEBUG SECTION ---
+if st.sidebar.button("🔍 Debug: List All Tabs"):
+    try:
+        # This asks Google for the names of all tabs in that file
+        all_tabs = conn.list_worksheets(spreadsheet=SHEET_URL)
+        st.sidebar.write("Found these tabs:")
+        st.sidebar.json(all_tabs)
+    except Exception as e:
+        st.sidebar.error(f"Debug failed: {e}")
+
 tab1, tab2, tab3 = st.tabs(["💰 Maintenance", "💸 Expenses", "📊 Logs & Audit"])
 
 # --- TAB 1: MAINTENANCE ---
@@ -109,3 +119,4 @@ with tab3:
     else:
         st.write(f"### View {dataset} Table")
         st.dataframe(df, use_container_width=True)
+
