@@ -63,52 +63,41 @@ with tab1:
         expected_amount = opening_due + (total_months_due * MONTHLY_MAINT)
 
         # Payments (Excel-proven)
-        total_paid_amount = 0.0
-        if not df_coll.empty:
-            flat_col = next((col for col in df_coll.columns if 'flat' in col.lower()), None)
-            amount_col = next((col for col in df_coll.columns if 'amount_received' in col), None)
-            if flat_col and amount_col:
-                flat_payments = df_coll[df_coll[flat_col].astype(str).str.upper() == key]
-                total_paid_amount = float(flat_payments[amount_col].sum())
-
-        current_due = max(0, expected_amount - total_paid_amount)
+        # === PAYMENTS: BULLETPROOF VERSION ===
+total_paid_amount = 0.0
+if not df_coll.empty:
+    st.write(f"DEBUG: Found {len(df_coll)} collection rows")  # Remove after fix
+    
+    # TRY ALL POSSIBLE AMOUNT COLUMNS (like your Tkinter)
+    amount_candidates = []
+    for col in df_coll.columns:
+        if any(x in col.lower() for x in ['amount', 'received', 'payment']):
+            amount_candidates.append(col)
+    
+    st.write(f"DEBUG: Amount columns found: {amount_candidates}")  # Remove after fix
+    
+    if amount_candidates:
+        # Use first matching column
+        amount_col = amount_candidates[0]
         
-        st.metric("Total Outstanding Due", f"₹{current_due:,.0f}")
-        with st.expander("🔍 Breakdown"):
-            st.write(f"**Jan 2025–{today.strftime('%b %Y')}** ({total_months_due} months)")
-            st.write(f"Opening: ₹{opening_due:,.0f}")
-            st.write(f"Expected: ₹{expected_amount:,.0f}")
-            st.write(f"Paid: ₹{total_paid_amount:,.0f}")
+        # TRY ALL POSSIBLE FLAT COLUMNS
+        flat_candidates = [col for col in df_coll.columns if 'flat' in col.lower()]
+        flat_col = flat_candidates[0] if flat_candidates else None
+        
+        if flat_col:
+            key = str(selected_flat).replace(" ", "").upper()
+            flat_payments = df_coll[df_coll[flat_col].astype(str).str.strip().str.upper() == key]
+            
+            st.write(f"DEBUG: Found {len(flat_payments)} payments for {key}")  # Remove after fix
+            st.write(f"DEBUG: Using flat_col='{flat_col}', amount_col='{amount_col}'")  # Remove after fix
+            
+            if not flat_payments.empty:
+                payments_amt = flat_payments[amount_col]
+                total_paid_amount = float(payments_amt.sum())
+                st.write(f"DEBUG: Raw payments sum: {payments_amt.sum()}")  # Remove after fix
+        else:
+            st.error(f"No flat column found. Available: {list(df_coll.columns)}")
 
-        # === PAYMENT FORM ===
-        if is_admin:
-            st.divider()
-            with st.form("payment_form", clear_on_submit=True):
-                col1, col2 = st.columns(2)
-                with col1:
-                    p_date = st.date_input("Date", datetime.now())
-                    next_bill = 1001
-                    if 'bill_no' in df_coll.columns:
-                        bill_nos = pd.to_numeric(df_coll['bill_no'], errors='coerce').dropna()
-                        next_bill = int(bill_nos.max() or 1000) + 1
-                    p_bill = st.number_input("Bill No", value=next_bill)
-                with col2:
-                    p_mode = st.selectbox("Mode", ["Cash", "Online", "Cheque"])
-                    months_options = [f"{m.strftime('%b')}-{m.year}" for m in pd.date_range("2025-01-01", periods=26, freq="MS")]
-                    p_months = st.multiselect("Months", months_options)
-                    p_amt = st.number_input("Amount", value=len(p_months)*MONTHLY_MAINT if p_months else MONTHLY_MAINT)
-
-                if st.form_submit_button("Save Payment"):
-                    pay_data = {
-                        "date": p_date.strftime("%d-%m-%Y"),
-                        "bill_no": p_bill, "flat": selected_flat, "owner": owner_row['owner'],
-                        "months_paid": ", ".join(p_months), "amount_received": p_amt, "mode": p_mode
-                    }
-                    updated_df = pd.concat([df_coll, pd.DataFrame([pay_data])], ignore_index=True)
-                    conn.update(worksheet="Collections", data=updated_df)
-                    st.success("✅ Saved! Receipt-ready format.")
-                    st.cache_data.clear()
-                    st.rerun()
 
 # === OTHER TABS (SIMPLIFIED) ===
 with tab2: st.dataframe(df_owners, use_container_width=True)
@@ -117,3 +106,4 @@ with tab3:
     # Expense form here (same structure)
     st.dataframe(df_exp, use_container_width=True)
 with tab4: st.dataframe(df_coll, use_container_width=True)
+
