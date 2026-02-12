@@ -55,13 +55,24 @@ else:
 # ================= 4. MAIN INTERFACE =================
 st.title("🏢 Society Management Portal")
 
-# --- DEBUG SECTION ---
+# --- NEW DEBUG SECTION ---
 if st.sidebar.button("🔍 Debug: List All Tabs"):
     try:
-        # This asks Google for the names of all tabs in that file
-        all_tabs = conn.list_worksheets(spreadsheet=SHEET_URL)
-        st.sidebar.write("Found these tabs:")
-        st.sidebar.json(all_tabs)
+        # We use pandas to fetch the Excel file metadata directly
+        # We need to transform the URL slightly for this to work
+        debug_url = SHEET_URL.replace('/edit?usp=sharing', '/export?format=xlsx')
+        debug_url = debug_url.replace('/edit#gid=0', '/export?format=xlsx')
+        
+        # This will list every tab name it finds
+        with pd.ExcelFile(debug_url) as xls:
+            st.sidebar.write("Found these tabs:")
+            st.sidebar.write(xls.sheet_names)
+            
+            # Check if 'Owners' is exactly in there
+            if "Owners" in xls.sheet_names:
+                st.sidebar.success("✅ 'Owners' found!")
+            else:
+                st.sidebar.error("❌ 'Owners' NOT found.")
     except Exception as e:
         st.sidebar.error(f"Debug failed: {e}")
 
@@ -119,4 +130,5 @@ with tab3:
     else:
         st.write(f"### View {dataset} Table")
         st.dataframe(df, use_container_width=True)
+
 
