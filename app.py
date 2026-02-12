@@ -49,44 +49,52 @@ with tab1:
         name_col = next((c for c in df_owners.columns if 'owner' in c or 'name' in c), None)
         st.info(f"**Owner:** {owner_row.get(name_col, 'N/A')}")
 
-    # === DUES CALCULATION ENGINE (SUPER-MATCHING) ===
+    # === DUES CALCULATION ENGINE (DEBUG VERSION) ===
     today = datetime.now()
-    # Total months from Jan 2025 to now (inclusive)
     total_months = (today.year - 2025) * 12 + today.month
 
-    # 1. Get Opening Due (from Owners sheet)
-    # We look for the column you named 'opening_due' (safe_read_gsheet converts it to this)
+    # 1. Get Opening Due from Owners
+    # Since safe_read_gsheet replaces spaces with _, 'opening due' becomes 'opening_due'
     due_col = next((c for c in df_owners.columns if 'due' in c), None)
-    opening_due = pd.to_numeric(owner_row.get(due_col, 0), errors='coerce')
-    if pd.isna(opening_due): opening_due = 0
+    opening_due = pd.to_numeric(owner_row.get(due_col, 0), errors='coerce') or 0
 
-    # 2. Get Total Paid (from Collections sheet)
+    # 2. Get Total Paid from Collections
     total_paid = 0.0
     if not df_coll.empty:
-        # Standardize search keys: "A-101" -> "A101"
-        def clean_key(val):
-            return str(val).strip().upper().replace("-", "").replace(" ", "")
+        # We force EVERYTHING to a standard format to ensure a match
+        def force_clean(val):
+            return "".join(filter(str.isalnum, str(val))).upper()
 
-        c_flat_col = next((c for c in df_coll.columns if 'flat' in c), None)
-        c_amt_col = next((c for c in df_coll.columns if 'received' in c or 'amount' in c), None)
-        
-        if c_flat_col and c_amt_col:
-            # Create a temporary cleaned column for matching
-            search_key = clean_key(selected_flat)
-            df_coll_temp = df_coll.copy()
-            df_coll_temp['match_key'] = df_coll_temp[c_flat_col].apply(clean_key)
-            
-            # Filter payments
-            payments = df_coll_temp[df_coll_temp['match_key'] == search_key]
-            total_paid = pd.to_numeric(payments[c_amt_col], errors='coerce').sum()
-            
-            # If total_paid is still 0, let's show a debug message (optional)
-            if total_paid == 0 and not df_coll.empty:
-                 st.sidebar.warning(f"No payments found for {selected_flat} in Collections")
+        # Find the columns even if they are renamed
+        c_flat = next((c for c in df_coll.columns if 'flat' in c), None)
+        c_amt = next((c for c in df_coll.columns if 'received' in c or 'amount' in c), None)
 
-    # 3. Final Math
-    # Total Accrued - Total Paid
+        if c_flat and c_amt:
+            # Create a matching ID (A-101 becomes A101)
+            target_id = force_clean(selected_flat)
+            
+            # Convert the whole column to matching IDs
+            df_coll['match_id'] = df_coll[c_flat].apply(force_clean)
+            
+            # Filter and Calculate
+            matched_payments = df_coll[df_coll['match_id'] == target_id]
+            total_paid = pd.to_numeric(matched_payments[c_amt], errors='coerce').sum()
+            
+            # --- DEBUG INFO (Only shows in sidebar) ---
+            with st.sidebar:
+                st.write(f"Searching for: {target_id}")
+                st.write(f"Found {len(matched_payments)} rows in Collections")
+                if len(matched_payments) == 0:
+                    st.write("Available IDs in sheet:", df_coll['match_id'].unique()[:5])
+        else:
+            st.sidebar.error("Could not find Flat or Amount column in Collections!")
+
+    # 3. Final Calculation
     current_due = (opening_due + (total_months * MONTHLY_MAINT)) - total_paid
+
+    # --- DISPLAY ---
+    st.metric("Total Outstanding Due", f"₹ {int(current_due):,}")
+    
     # --- DISPLAY METRIC ---
     st.metric("Total Outstanding Due", f"₹ {int(current_due):,}")
     
@@ -163,4 +171,5 @@ with tab3:
 with tab4:
     st.subheader("Collection History")
     st.dataframe(df_coll, use_container_width=True)
+
 
