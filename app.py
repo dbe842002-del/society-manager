@@ -83,7 +83,7 @@ with tab1:
         
         st.metric("Outstanding Balance", f"₹ {current_due:,.0f}")
         st.caption(f"Calculation: {opening_due} (Opening) + {total_months} months - {paid_amt} (Paid)")
-                    st.rerun()
+                    
 
 # --- TAB 2: EXPENSES ---
 with tab2:
@@ -117,5 +117,6 @@ with tab2:
 # --- TAB 3: RECORDS ---
 with tab3:
     st.dataframe(load_sheet("Collections"), width="stretch")
+
 
 
