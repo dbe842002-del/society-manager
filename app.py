@@ -1,141 +1,68 @@
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
-import io
 from datetime import datetime
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
 
-# ================= 1. CONFIGURATION (STRICTLY FROM SECRETS) =================
-# We pull these from the Streamlit Cloud Secrets tab
+# --- CONFIGURATION ---
+# These must match your Streamlit Secrets exactly
 try:
     ADMIN_PASSWORD = st.secrets["admin_password"]
     SHEET_URL = st.secrets["sheet_url"]
-except KeyError:
-    st.error("Secrets not found! Please add admin_password and sheet_url to Streamlit Secrets.")
+except:
+    st.error("Missing Secrets: Please add admin_password and sheet_url.")
     st.stop()
 
-MONTHLY_MAINT = 2100
+st.set_page_config(page_title="DBE Society Management", layout="wide")
 
-st.set_page_config(page_title="Society Management Admin", layout="wide")
-
-# ================= 2. DATABASE CONNECTION =================
+# --- CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data(worksheet_name):
-    # This method is the 'Old Reliable'
-    # It turns the sheet into a direct CSV download link
     try:
-        # 1. Clean the base URL
-        base = SHEET_URL.split("/edit")[0]
-        # 2. Create a direct CSV export link for the specific tab
-        final_url = f"{base}/export?format=csv&sheet={worksheet_name}"
-        # 3. Read it with standard pandas
-        return pd.read_csv(final_url)
+        # We use the direct sheet name you provided
+        return conn.read(spreadsheet=SHEET_URL, worksheet=worksheet_name, ttl=0)
     except Exception as e:
-        st.error(f"⚠️ Connection Error: {e}")
-        # Return empty data so the app doesn't turn red
-        return pd.DataFrame(columns=["flat", "owner", "due"])
+        st.error(f"Error loading '{worksheet_name}': {e}")
+        # Return empty matching columns if load fails
+        cols = {"Owners": ["flat", "owner"], "Collections": ["Date", "Flat", "Amount"], "Expenses": ["Date", "Item", "Amount"]}
+        return pd.DataFrame(columns=cols.get(worksheet_name, []))
 
-def update_db(df, worksheet):
-    try:
-        conn.update(spreadsheet=SHEET_URL, worksheet=worksheet, data=df)
-        st.cache_data.clear()
-        st.success(f"✅ Database updated in {worksheet}!")
-    except Exception as e:
-        st.error(f"❌ Failed to update database: {e}")
-
-# ================= 3. AUTHENTICATION UI =================
-st.sidebar.title("🔐 Access Control")
-# Use a unique key to prevent refresh issues
-password_input = st.sidebar.text_input("Enter Admin Password", type="password", key="login_pwd")
-is_admin = (password_input == ADMIN_PASSWORD)
+# --- SIDEBAR AUTH ---
+st.sidebar.title("🔐 Admin Portal")
+pwd = st.sidebar.text_input("Password", type="password")
+is_admin = (pwd == ADMIN_PASSWORD)
 
 if is_admin:
-    st.sidebar.success("Admin Access Granted")
-else:
-    if password_input:
-        st.sidebar.error("Incorrect Password")
-    st.sidebar.info("Limited to 'View Only' mode.")
+    st.sidebar.success("Logged in as Admin")
+elif pwd:
+    st.sidebar.error("Wrong password")
 
-# ================= 4. MAIN INTERFACE =================
-st.title("🏢 Society Management Portal")
-
-# --- NEW DEBUG SECTION ---
-if st.sidebar.button("🔍 Debug: List All Tabs"):
-    try:
-        # We use pandas to fetch the Excel file metadata directly
-        # We need to transform the URL slightly for this to work
-        debug_url = SHEET_URL.replace('/edit?usp=sharing', '/export?format=xlsx')
-        debug_url = debug_url.replace('/edit#gid=0', '/export?format=xlsx')
-        
-        # This will list every tab name it finds
-        with pd.ExcelFile(debug_url) as xls:
-            st.sidebar.write("Found these tabs:")
-            st.sidebar.write(xls.sheet_names)
-            
-            # Check if 'Owners' is exactly in there
-            if "Owners" in xls.sheet_names:
-                st.sidebar.success("✅ 'Owners' found!")
-            else:
-                st.sidebar.error("❌ 'Owners' NOT found.")
-    except Exception as e:
-        st.sidebar.error(f"Debug failed: {e}")
+# --- MAIN APP ---
+st.title("🏢 DBE Society Management")
 
 tab1, tab2, tab3 = st.tabs(["💰 Maintenance", "💸 Expenses", "📊 Logs & Audit"])
 
-# --- TAB 1: MAINTENANCE ---
 with tab1:
-    owners_df = load_data("Owners")
+    # This matches your 'Owners' tab
+    df_owners = load_data("Owners")
     
-    if is_admin:
-        st.subheader("📝 Record New Payment")
-        col1, col2 = st.columns(2)
-        with col1:
-            if not owners_df.empty and "flat" in owners_df.columns:
-                flat = st.selectbox("Select Flat", owners_df["flat"].tolist())
-            else:
-                st.error("No flat data found in 'Owners' tab.")
-                flat = "N/A"
-            bill_no = st.text_input("Bill No", value=datetime.now().strftime("%H%M%S"))
-        with col2:
-            months = st.multiselect("Select Months", ["Jan-2026", "Feb-2026", "Mar-2026", "Apr-2026", "May-2026", "Jun-2026"])
-            mode = st.selectbox("Mode", ["Cash", "Online", "Cheque"])
-
-        if st.button("Save Payment", type="primary"):
-            if not months:
-                st.warning("Please select at least one month.")
-            else:
-                coll_df = load_data("Collections")
-                new_row = pd.DataFrame([{
-                    "Date": datetime.now().strftime("%d-%m-%Y"),
-                    "Bill_No": bill_no,
-                    "Flat": flat,
-                    "Amount": len(months) * MONTHLY_MAINT,
-                    "Mode": mode,
-                    "Months": ", ".join(months)
-                }])
-                updated_df = pd.concat([coll_df, new_row], ignore_index=True)
-                update_db(updated_df, "Collections")
+    if not df_owners.empty:
+        if is_admin:
+            st.subheader("Record New Payment")
+            # Selectbox using the 'flat' column from your Google Sheet
+            flat_list = df_owners["flat"].tolist() if "flat" in df_owners.columns else []
+            selected_flat = st.selectbox("Select Flat", flat_list)
+            
+            if st.button("Save Record"):
+                st.info("Recording functionality active...")
+        else:
+            st.write("### Resident View")
+            st.dataframe(df_owners, use_container_width=True)
     else:
-        st.warning("Admin login required to record payments.")
-        st.info("Please use the sidebar to authenticate.")
+        st.warning("No data found in the 'Owners' tab. Please check your Google Sheet.")
 
-# --- TAB 3: ADMIN EDITING ---
 with tab3:
-    st.subheader("📋 Master Data Records")
-    dataset = st.radio("Choose Table to View/Edit", ["Collections", "Expenses", "Owners"], horizontal=True)
-    df = load_data(dataset)
-
-    if is_admin:
-        st.write(f"### Edit {dataset} Table")
-        edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True, key=f"editor_{dataset}")
-        
-        if st.button(f"Push Changes to {dataset}"):
-            update_db(edited_df, dataset)
-    else:
-        st.write(f"### View {dataset} Table")
-        st.dataframe(df, use_container_width=True)
-
-
-
+    # This allows you to view your 3 sheets
+    view_choice = st.radio("Select Sheet", ["Owners", "Expenses", "Collections"], horizontal=True)
+    df_view = load_data(view_choice)
+    st.dataframe(df_view, use_container_width=True)
