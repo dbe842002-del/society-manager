@@ -67,6 +67,11 @@ with tab1:
 if not df_coll.empty:
     flat_col = next((col for col in df_coll.columns if 'flat' in col.lower()), 'flat')
     amount_col = next((col for col in df_coll.columns if any(x in col.lower() for x in ['amount_received', 'amount', 'received'])), 'amount_received')
+# ADD THIS RIGHT AFTER st.info(f"🔍 Using...")
+st.write("**ALL Flats with payments:**")
+flat_counts = df_coll['flat'].value_counts()
+st.write(flat_counts)
+st.write(f"**A-106 payments found:** {len(df_coll[df_coll['flat'].astype(str).str.contains('A-106', na=False)])}")
     
     if flat_col in df_coll.columns and amount_col in df_coll.columns:
         key = str(selected_flat).upper()
@@ -127,6 +132,7 @@ with tab3:
     # Expense form here (same structure)
     st.dataframe(df_exp, use_container_width=True)
 with tab4: st.dataframe(df_coll, use_container_width=True)
+
 
 
 
