@@ -47,41 +47,44 @@ with tab1:
     df_coll = load_data("Collections")
     
     if not df_owners.empty:
-        # 1. Get current month number (Feb = 2)
-        current_month_no = datetime.now().month
+        # --- 1. THE MATH ENGINE ---
+        today = datetime.now()
+        # Calculates months since Jan 2025 (e.g., Feb 2026 = 14 months)
+        total_months_since_2025 = (today.year - 2025) * 12 + today.month
         
-        # 2. Process Collections to get total paid per flat
+        # Calculate total paid per flat from the Collections sheet
         if not df_coll.empty and "Flat" in df_coll.columns:
-            # Sum up all amounts paid by each flat
-            payments_sum = df_coll.groupby("Flat")["Amount"].sum().reset_index()
+            payments_sum = df_coll.groupby("Flat")["Amount"].sum()
         else:
-            payments_sum = pd.DataFrame(columns=["Flat", "Amount"])
+            payments_sum = pd.Series(dtype=float)
 
-        # 3. Calculate Live Due for each owner
-        def calculate_live_due(row):
-            opening_due = row.get("due", 0)  # Value from your Google Sheet
-            total_accrued = (2100 * 12) + (2100 * current_month_no)
+        # --- 2. APPLY FORMULA TO EACH ROW ---
+        def calculate_balance(row):
+            opening_due = row.get("due", 0)
+            # Your Formula: Expected = Opening + (Months * 2100)
+            expected_amount = opening_due + (total_months_since_2025 * MONTHLY_MAINT)
             
-            # Find how much this specific flat has paid
-            paid_row = payments_sum[payments_sum["Flat"] == row["flat"]]
-            total_paid = paid_row["Amount"].values[0] if not paid_row.empty else 0
-            
-            return (opening_due + total_accrued) - total_paid
+            # Subtract what they have actually paid
+            total_paid = payments_sum.get(row["flat"], 0)
+            return expected_amount - total_paid
 
-        # Apply the formula
-        df_owners["Current_Balance"] = df_owners.apply(calculate_live_due, axis=1)
+        # Create the dynamic column
+        df_owners["Total_Outstanding"] = df_owners.apply(calculate_balance, axis=1)
 
-        # 4. Display Logic
+        # --- 3. DISPLAY ---
         if is_admin:
             st.subheader("📝 Record New Payment")
-            # ... (keep your existing payment entry code here) ...
+            # ... (Your existing Selectbox and Save Payment button code goes here) ...
             
             st.divider()
-            st.subheader("📊 Live Outstanding Summary")
-            st.dataframe(df_owners[["flat", "owner", "due", "Current_Balance"]], width="stretch")
+            st.subheader("📊 Live Financial Status")
+            # Show the breakdown for Admin
+            display_cols = ["flat", "owner", "due", "Total_Outstanding"]
+            st.dataframe(df_owners[display_cols], width="stretch")
         else:
-            st.subheader("🏢 Society Outstanding List")
-            st.dataframe(df_owners[["flat", "owner", "Current_Balance"]], width="stretch")
+            st.subheader("🏢 Society Dues List")
+            # Show simplified view for residents
+            st.dataframe(df_owners[["flat", "owner", "Total_Outstanding"]], width="stretch")
 
 with tab3:
     st.subheader("📋 Master Records")
@@ -89,6 +92,7 @@ with tab3:
     df_view = load_data(view_choice)
     # Fixed the 'use_container_width' warning here too
     st.dataframe(df_view, width="stretch")
+
 
 
 
