@@ -12,7 +12,13 @@ st.set_page_config(page_title="DBE Society Management", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_sheet(name):
-    return conn.read(worksheet=name, ttl=0) # ttl=0 ensures fresh data on every write
+    try:
+        # We use 'spreadsheet' key from secrets automatically
+        return conn.read(worksheet=name, ttl=0)
+    except Exception as e:
+        st.error(f"❌ Could not find tab named '{name}'")
+        st.info("Check if the tab name in Google Sheets is exactly the same (Case Sensitive).")
+        return pd.DataFrame()
 
 # --- 3. AUTHENTICATION ---
 with st.sidebar:
@@ -119,3 +125,4 @@ with tab2:
 # --- TAB 3: RECORDS ---
 with tab3:
     st.dataframe(load_sheet("Collections"), width="stretch")
+
