@@ -42,61 +42,47 @@ with tab1:
     df_coll = load_sheet("Collections")
 
     if not df_owners.empty:
-        # Porting your Desktop Logic: Calc Dues
-        col1, col2 = st.columns(2)
-        with col1:
-            # Clean column names for safety
-            df_owners.columns = df_owners.columns.str.strip().str.lower()
-            selected_flat = st.selectbox("Select Flat", df_owners['flat'].unique())
-            owner_row = df_owners[df_owners['flat'] == selected_flat].iloc[0]
-            st.write(f"**Owner:** {owner_row['owner']}")
+        # 1. Clean column names
+        df_owners.columns = df_owners.columns.str.strip().str.lower()
+        
+        # 2. Selection UI
+        selected_flat = st.selectbox("Select Flat", df_owners['flat'].unique())
+        owner_row = df_owners[df_owners['flat'] == selected_flat].iloc[0]
+        
+        st.write(f"**Owner:** {owner_row.get('owner', 'N/A')}")
 
-        # Calculation Engine (From your Excel code)
+        # --- 3. SAFE CALCULATION ENGINE ---
         today = datetime.now()
         total_months = (today.year - 2025) * 12 + today.month
-        opening_due = pd.to_numeric(owner_row['due'], errors='coerce') or 0
         
-        # Get Paid from Collections
+        # FIX: Find the 'due' column even if it's named 'due' or 'opening due'
+        # We look for any column that contains the word 'due'
+        due_col = next((c for c in df_owners.columns if 'due' in c), None)
+        
+        if due_col:
+            opening_due = pd.to_numeric(owner_row[due_col], errors='coerce') or 0
+        else:
+            st.error("Column 'due' not found in Owners sheet!")
+            opening_due = 0
+        
+        # Get Paid amount from Collections
         paid_amt = 0
         if not df_coll.empty:
+            # Normalize Collections columns
             df_coll.columns = df_coll.columns.str.strip()
-            paid_amt = pd.to_numeric(df_coll[df_coll['Flat'].astype(str) == str(selected_flat)]['amount_received'], errors='coerce').sum()
+            # Find the 'Flat' and 'amount_received' columns regardless of case
+            c_flat_col = next((c for c in df_coll.columns if c.lower() == 'flat'), 'Flat')
+            c_amt_col = next((c for c in df_coll.columns if 'received' in c.lower()), 'amount_received')
+            
+            # Filter and Sum
+            paid_rows = df_coll[df_coll[c_flat_col].astype(str).str.upper() == str(selected_flat).upper()]
+            paid_amt = pd.to_numeric(paid_rows[c_amt_col], errors='coerce').sum()
 
+        # Final Formula
         current_due = (opening_due + (total_months * MONTHLY_MAINT)) - paid_amt
+        
         st.metric("Outstanding Balance", f"₹ {current_due:,.0f}")
-
-        if is_admin:
-            st.divider()
-            st.subheader("📝 Record New Payment")
-            with st.form("pay_form", clear_on_submit=True):
-                c1, c2 = st.columns(2)
-                with c1:
-                    bill_date = st.date_input("Date", datetime.now())
-                    # Get next bill number logic
-                    next_bill = 1001
-                    if not df_coll.empty and 'bill_no' in df_coll.columns:
-                        next_bill = int(pd.to_numeric(df_coll['bill_no'], errors='coerce').max() + 1)
-                    
-                    bill_no = st.number_input("Bill No", value=next_bill)
-                with c2:
-                    mode = st.selectbox("Mode", ["Online", "Cash", "Cheque"])
-                    amt = st.number_input("Amount Received", value=2100)
-                
-                months = st.multiselect("Paying for Months", ["Jan-25", "Feb-25", "Mar-25", "Apr-25", "May-25", "Jun-25", "Jul-25", "Aug-25", "Sep-25", "Oct-25", "Nov-25", "Dec-25", "Jan-26", "Feb-26"])
-                
-                if st.form_submit_button("Submit Payment"):
-                    new_payment = pd.DataFrame([{
-                        "date": bill_date.strftime("%d-%m-%Y"),
-                        "bill_no": bill_no,
-                        "Flat": selected_flat,
-                        "owner": owner_row['owner'],
-                        "months_paid": ", ".join(months),
-                        "amount_received": amt,
-                        "mode": mode
-                    }])
-                    updated_df = pd.concat([df_coll, new_payment], ignore_index=True)
-                    conn.update(worksheet="Collections", data=updated_df)
-                    st.success("Payment Recorded!")
+        st.caption(f"Calculation: {opening_due} (Opening) + {total_months} months - {paid_amt} (Paid)")
                     st.rerun()
 
 # --- TAB 2: EXPENSES ---
@@ -131,4 +117,5 @@ with tab2:
 # --- TAB 3: RECORDS ---
 with tab3:
     st.dataframe(load_sheet("Collections"), width="stretch")
+
 
