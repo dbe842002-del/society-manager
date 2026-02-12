@@ -30,11 +30,14 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data(worksheet_name):
     try:
-        # Use the name of the tab directly
-        return conn.read(worksheet=worksheet_name, ttl=0)
+        # This converts any Google Sheet URL into a direct CSV download link for a specific tab
+        base_url = SHEET_URL.split('/edit')[0]
+        csv_url = f"{base_url}/export?format=csv&sheet={worksheet_name}"
+        return pd.read_csv(csv_url)
     except Exception as e:
-        st.error(f"Connection Error: {e}")
-        return pd.DataFrame()
+        st.error(f"Error loading {worksheet_name}: {e}")
+        # Fallback to the connector if the direct link fails
+        return conn.read(spreadsheet=SHEET_URL, worksheet=worksheet_name, ttl=0)
 
 def update_db(df, worksheet):
     conn.update(spreadsheet=SHEET_URL, worksheet=worksheet, data=df)
@@ -114,5 +117,6 @@ if is_admin:
         # Logic to get last row and generate PDF
 
         st.sidebar.write("Generating...")
+
 
 
