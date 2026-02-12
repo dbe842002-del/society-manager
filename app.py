@@ -13,18 +13,14 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_sheet(name):
     try:
-        # Attempt 1: Standard library read
-        df = conn.read(worksheet=name, ttl=0)
-        return df
-    except Exception:
-        try:
-            # Attempt 2: Fallback to the working CSV method
-            base_url = st.secrets["connections"]["gsheets"]["spreadsheet"].split("/edit")[0]
-            csv_url = f"{base_url}/export?format=csv&sheet={name}"
-            return pd.read_csv(csv_url)
-        except Exception as e:
-            st.error(f"Error: {e}")
-            return pd.DataFrame()
+        # Get the base URL from secrets and strip everything after /edit
+        base_url = st.secrets["connections"]["gsheets"]["spreadsheet"].split("/edit")[0]
+        # Direct export link for the specific tab name
+        csv_url = f"{base_url}/export?format=csv&sheet={name}"
+        return pd.read_csv(csv_url)
+    except Exception as e:
+        st.error(f"Failed to load {name}: {e}")
+        return pd.DataFrame()
 
 # --- 3. AUTHENTICATION ---
 with st.sidebar:
@@ -119,6 +115,7 @@ with tab2:
 # --- TAB 3: RECORDS ---
 with tab3:
     st.dataframe(load_sheet("Collections"), width="stretch")
+
 
 
 
