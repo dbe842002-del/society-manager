@@ -62,26 +62,29 @@ with tab1:
         total_months_due = (today.year - 2025) * 12 + today.month  # NO -1
         expected_amount = opening_due + (total_months_due * MONTHLY_MAINT)
 
-            # === BULLETPROOF PAYMENTS ===
-    total_paid_amount = 0.0
-    if not df_coll.empty:
-        flat_col = next((col for col in df_coll.columns if 'flat' in col.lower()), 'flat')
-        amount_col = next((col for col in df_coll.columns if any(x in col.lower() for x in ['amount_received', 'amount', 'received'])), 'amount_received')
-        
-        st.info(f"🔍 Using: flat='{flat_col}', amount='{amount_col}'")
-        
-        flat_payments = df_coll[
-    df_coll[flat_col].astype(str).str.strip().str.upper().str.replace('-','').str.replace(' ','').str.contains(
-        str(selected_flat).replace('-','').replace(' ','').upper()
-    )
-]
-
+                   # === BULLETPROOF PAYMENTS ===
+        total_paid_amount = 0.0
+        if not df_coll.empty:
+            flat_col = next((col for col in df_coll.columns if 'flat' in col.lower()), 'flat')
+            amount_col = next((col for col in df_coll.columns if any(x in col.lower() for x in ['amount_received', 'amount', 'received'])), 'amount_received')
             
-            if not flat_payments.empty:
-                total_paid_amount = float(pd.to_numeric(flat_payments[amount_col], errors='coerce').sum())
-                st.success(f"✅ Found ₹{total_paid_amount:,.0f} paid!")
-            else:
-                st.info(f"No payments found for {key}")
+            st.info(f"🔍 Using: flat='{flat_col}', amount='{amount_col}'")
+            
+            if flat_col in df_coll.columns and amount_col in df_coll.columns:
+                key = str(selected_flat).upper()
+                
+                # Universal flat matching
+                flat_clean = df_coll[flat_col].astype(str).str.strip().str.upper().str.replace('-','').str.replace(' ','')
+                key_clean = key.replace('-','').replace(' ','')
+                
+                flat_payments = df_coll[flat_clean.str.contains(key_clean)]
+                
+                if not flat_payments.empty:
+                    total_paid_amount = float(pd.to_numeric(flat_payments[amount_col], errors='coerce').sum())
+                    st.success(f"✅ Found ₹{total_paid_amount:,.0f} paid!")
+                else:
+                    st.info("No matching payments found")
+
 
 
 
@@ -131,6 +134,7 @@ with tab3:
     # Expense form here (same structure)
     st.dataframe(df_exp, use_container_width=True)
 with tab4: st.dataframe(df_coll, use_container_width=True)
+
 
 
 
