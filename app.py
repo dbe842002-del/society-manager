@@ -34,54 +34,53 @@ tab1, tab2, tab3 = st.tabs(["💰 Maintenance", "💸 Expenses", "📊 Master Re
 
 # --- TAB 1: MAINTENANCE & PAYMENTS ---
 with tab1:
-    # 1. Load Data
     df_owners = load_sheet("Owners")
     df_coll = load_sheet("Collections")
 
-    # 2. FORCE DATA CORRECTION
-    # If df_coll has 'opening due', it definitely loaded the wrong sheet.
-    # We will try to reload it or show a specific fix.
-    if 'opening due' in [str(c).lower() for c in df_coll.columns]:
-        st.error("⚠️ **Tab Name Mismatch!**")
-        st.info("The app is trying to find a tab named **'Collections'**, but it is accidentally loading the 'Owners' tab instead.")
-        st.write("Please check your Google Sheet. Is the tab named **'Collections'** (plural) or **'Collection'** (singular)?")
-        
-        # Emergency Fallback: If it's named 'Collection' (singular), try loading that:
-        df_coll = load_sheet("Collection")
-
-    if not df_owners.empty:
+    # This check ensures we actually got different data
+    if not df_coll.empty and not df_owners.empty:
         # Standardize Owners
         df_owners.columns = df_owners.columns.str.strip().str.lower()
+        
+        # UI for Flat Selection
         selected_flat = st.selectbox("Select Flat", df_owners['flat'].unique())
         owner_row = df_owners[df_owners['flat'] == selected_flat].iloc[0]
-        
         st.write(f"**Owner:** {owner_row.get('owner', 'N/A')}")
 
         # --- 3. DUES CALCULATION ---
         today = datetime.now()
         total_months = (today.year - 2025) * 12 + today.month
         
-        # Safe way to get opening due
+        # Find 'due' column
         due_col = next((c for c in df_owners.columns if 'due' in c), None)
         opening_val = pd.to_numeric(owner_row[due_col], errors='coerce') if due_col else 0
         opening_due = 0 if pd.isna(opening_val) else opening_val
         
-        # --- 4. PAID CALCULATION ---
+        # --- 4. PAID CALCULATION (From Collections) ---
         paid_amt = 0
-        if not df_coll.empty:
-            df_coll.columns = df_coll.columns.str.strip()
-            # Find Amount Column
-            c_amt_col = next((c for c in df_coll.columns if 'received' in c.lower() or 'amount' in c.lower()), None)
-            c_flat_col = next((c for c in df_coll.columns if c.lower() == 'flat'), None)
+        # Force column cleaning for Collections
+        df_coll.columns = df_coll.columns.str.strip().str.lower()
+        
+        # Find amount_received column
+        c_amt_col = next((c for c in df_coll.columns if 'received' in c or 'amount' in c), None)
+        c_flat_col = next((c for c in df_coll.columns if 'flat' in c), None)
 
-            if c_amt_col and c_flat_col:
-                paid_rows = df_coll[df_coll[c_flat_col].astype(str).str.upper() == str(selected_flat).upper()]
-                paid_amt = pd.to_numeric(paid_rows[c_amt_col], errors='coerce').sum()
-
-        # --- 5. RESULT ---
-        current_due = (opening_due + (total_months * 2100)) - paid_amt
-        st.metric("Total Outstanding", f"₹ {current_due:,.0f}")
-                    
+        if c_amt_col and c_flat_col:
+            # Match flat (e.g. A-101)
+            paid_rows = df_coll[df_coll[c_flat_col].astype(str).str.upper() == str(selected_flat).upper()]
+            paid_amt = pd.to_numeric(paid_rows[c_amt_col], errors='coerce').sum()
+            
+            # --- 5. RESULT ---
+            current_due = (opening_due + (total_months * 2100)) - paid_amt
+            st.metric("Total Outstanding", f"₹ {current_due:,.0f}")
+            
+            with st.expander("📝 View Payment History"):
+                if not paid_rows.empty:
+                    st.dataframe(paid_rows[[c_flat_col, c_amt_col, 'date']])
+                else:
+                    st.write("No payments recorded for this flat.")
+        else:
+            st.error(f"Collections sheet headers incorrect. Found: {list(df_coll.columns)}")
 
 # --- TAB 2: EXPENSES ---
 with tab2:
@@ -115,6 +114,7 @@ with tab2:
 # --- TAB 3: RECORDS ---
 with tab3:
     st.dataframe(load_sheet("Collections"), width="stretch")
+
 
 
 
