@@ -47,20 +47,31 @@ with tab1:
 
         # --- MATH ENGINE ---
         today = datetime.now()
-        # Jan 2025 to Feb 2026 = 14 months
         total_months = (today.year - 2025) * 12 + today.month
         
-        # Opening Due (from Owners)
+        # 1. Clean Owners columns for this calculation
+        df_owners.columns = df_owners.columns.str.strip().str.lower()
         opening_due = pd.to_numeric(owner_row.get('opening due', 0), errors='coerce') or 0
         
-        # Total Paid (from Collections)
+        # 2. Clean Collections columns for this calculation
         paid_amt = 0
         if not df_coll.empty:
-            # Match flat exactly (case insensitive)
-            paid_rows = df_coll[df_coll['flat'].astype(str).str.upper() == str(selected_flat).upper()]
-            paid_amt = pd.to_numeric(paid_rows['amount_received'], errors='coerce').sum()
+            # Force lowercase and strip spaces on Collections headers
+            df_coll.columns = df_coll.columns.str.strip().str.lower()
+            
+            # Find the flat column and amount column regardless of slight name variations
+            c_flat = next((c for c in df_coll.columns if 'flat' in c), None)
+            c_amt = next((c for c in df_coll.columns if 'received' in c or 'amount' in c), None)
 
-        current_due = (opening_due + (total_months * MONTHLY_MAINT)) - paid_amt
+            if c_flat and c_amt:
+                # Match flat exactly (case insensitive)
+                paid_rows = df_coll[df_coll[c_flat].astype(str).str.upper() == str(selected_flat).upper()]
+                paid_amt = pd.to_numeric(paid_rows[c_amt], errors='coerce').sum()
+            else:
+                st.error(f"Could not find required columns in Collections. Found: {list(df_coll.columns)}")
+
+        # 3. Final Calculation
+        current_due = (opening_due + (total_months * 2100)) - paid_amt
 
         # --- DISPLAY RESULTS ---
         st.metric("Total Outstanding Due", f"₹ {current_due:,.0f}")
@@ -142,6 +153,7 @@ with tab2:
 # --- TAB 3: RECORDS ---
 with tab3:
     st.dataframe(load_sheet("Collections"), width="stretch")
+
 
 
 
