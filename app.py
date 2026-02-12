@@ -47,22 +47,22 @@ with tab1:
         owner_row = df_owners[df_owners['flat'] == selected_flat].iloc[0]
         st.info("Owner: " + str(owner_row.get('owner', 'N/A')))
     
-    today = datetime.now()
-    total_months = (today.year - 2025) * 12 + today.month
-    
-    # SAFE opening due calculation
-    opening_due = 0.0
-    try:
-        flat_col = next((col for col in df_owners.columns if 'flat' in col.lower()), None)
-        due_col = next((col for col in df_owners.columns if 'due' in col.lower()), None)
-        if flat_col and due_col and flat_col in df_owners.columns:
-            row = df_owners[df_owners[flat_col].astype(str).str.strip().str.upper() == selected_flat.upper()]
-            if not row.empty and due_col in row.columns:
-                val = str(row.iloc[0][due_col]).strip()
-                if val and val.lower() != 'nan':
-                    opening_due = float(str(val).replace("Rs", "").replace("Rs.", "").replace(",", "").replace(" ", ""))
-    except:
-        opening_due = 0.0
+    # === CORRECT REAL-TIME DUE CALC ===
+today = datetime.now()
+
+# 1. Months from Jan 2025 to NOW (inclusive)
+start_date = datetime(2025, 1, 1)
+months_passed = (today.year - start_date.year) * 12 + (today.month - start_date.month) + 1
+
+# 2. Expected total
+expected_total = months_passed * MONTHLY_MAINT
+
+# 3. Payments received (unchanged)
+total_paid = 0.0  # Your existing payment logic here
+
+# 4. Current due
+current_due = max(0, expected_total - total_paid)
+
     
     # BULLETPROOF payment calculation
     total_paid = 0.0
@@ -171,3 +171,4 @@ with tab4:
     st.subheader("Payment Collections")
     df_coll = safe_read_gsheet("Collections")
     st.dataframe(df_coll, use_container_width=True)
+
