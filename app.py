@@ -65,24 +65,31 @@ with tab1:
             st.error("Column 'due' not found in Owners sheet!")
             opening_due = 0
         
-        # Get Paid amount from Collections
+       # --- GET PAID AMOUNT FROM COLLECTIONS ---
         paid_amt = 0
         if not df_coll.empty:
-            # Normalize Collections columns
+            # 1. Clean Collections column names
             df_coll.columns = df_coll.columns.str.strip()
-            # Find the 'Flat' and 'amount_received' columns regardless of case
-            c_flat_col = next((c for c in df_coll.columns if c.lower() == 'flat'), 'Flat')
-            c_amt_col = next((c for c in df_coll.columns if 'received' in c.lower()), 'amount_received')
             
-            # Filter and Sum
-            paid_rows = df_coll[df_coll[c_flat_col].astype(str).str.upper() == str(selected_flat).upper()]
-            paid_amt = pd.to_numeric(paid_rows[c_amt_col], errors='coerce').sum()
+            # 2. Find the "Flat" column (case-insensitive)
+            c_flat_col = next((c for c in df_coll.columns if c.lower() == 'flat'), None)
+            
+            # 3. Find the "Amount" column (looks for 'received' or 'amount')
+            c_amt_col = next((c for c in df_coll.columns if 'received' in c.lower() or 'amount' in c.lower()), None)
+            
+            if c_flat_col and c_amt_col:
+                # Filter by flat (case-insensitive match)
+                paid_rows = df_coll[df_coll[c_flat_col].astype(str).str.upper() == str(selected_flat).upper()]
+                
+                # Convert to numeric and sum
+                paid_amt = pd.to_numeric(paid_rows[c_amt_col], errors='coerce').sum()
+            else:
+                st.warning(f"Could not find 'Flat' or 'amount_received' in Collections. Found: {list(df_coll.columns)}")
 
-        # Final Formula
+        # --- FINAL CALCULATION ---
         current_due = (opening_due + (total_months * MONTHLY_MAINT)) - paid_amt
         
         st.metric("Outstanding Balance", f"₹ {current_due:,.0f}")
-        st.caption(f"Calculation: {opening_due} (Opening) + {total_months} months - {paid_amt} (Paid)")
                     
 
 # --- TAB 2: EXPENSES ---
@@ -117,6 +124,7 @@ with tab2:
 # --- TAB 3: RECORDS ---
 with tab3:
     st.dataframe(load_sheet("Collections"), width="stretch")
+
 
 
 
