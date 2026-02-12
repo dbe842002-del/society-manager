@@ -29,9 +29,12 @@ st.set_page_config(page_title="Society Management Admin", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data(worksheet_name):
-    # Fix 1: Removed quotes from 0 (ttl must be a number)
-    # Fix 2: Changed 'worksheet' to 'worksheet_name' to match variable
-    return conn.read(spreadsheet=SHEET_URL, worksheet=worksheet_name, ttl=0)
+    try:
+        # Use the name of the tab directly
+        return conn.read(worksheet=worksheet_name, ttl=0)
+    except Exception as e:
+        st.error(f"Connection Error: {e}")
+        return pd.DataFrame()
 
 def update_db(df, worksheet):
     conn.update(spreadsheet=SHEET_URL, worksheet=worksheet, data=df)
@@ -111,4 +114,5 @@ if is_admin:
         # Logic to get last row and generate PDF
 
         st.sidebar.write("Generating...")
+
 
