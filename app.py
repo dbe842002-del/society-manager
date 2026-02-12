@@ -38,18 +38,23 @@ tab1, tab2, tab3 = st.tabs(["💰 Maintenance", "💸 Expenses", "📊 Master Re
 
 # --- TAB 1: MAINTENANCE & PAYMENTS ---
 with tab1:
-    # 1. Load data with forced fresh fetch
+    # 1. Load Data
     df_owners = load_sheet("Owners")
     df_coll = load_sheet("Collections")
 
-    # 2. Safety Check: Is 'Collections' actually loading the 'Owners' data?
-    # If the app accidentally loads the same sheet twice, we'll fix the reference
-    if not df_coll.empty and 'opening due' in df_coll.columns.str.lower():
-        st.warning("⚠️ Data Sync Error: App is reading 'Owners' instead of 'Collections'.")
-        # This usually means the worksheet name in load_sheet doesn't match the tab name exactly
-        st.info("Please ensure your Google Sheet has a tab named exactly 'Collections' (case sensitive).")
+    # 2. FORCE DATA CORRECTION
+    # If df_coll has 'opening due', it definitely loaded the wrong sheet.
+    # We will try to reload it or show a specific fix.
+    if 'opening due' in [str(c).lower() for c in df_coll.columns]:
+        st.error("⚠️ **Tab Name Mismatch!**")
+        st.info("The app is trying to find a tab named **'Collections'**, but it is accidentally loading the 'Owners' tab instead.")
+        st.write("Please check your Google Sheet. Is the tab named **'Collections'** (plural) or **'Collection'** (singular)?")
+        
+        # Emergency Fallback: If it's named 'Collection' (singular), try loading that:
+        df_coll = load_sheet("Collection")
 
     if not df_owners.empty:
+        # Standardize Owners
         df_owners.columns = df_owners.columns.str.strip().str.lower()
         selected_flat = st.selectbox("Select Flat", df_owners['flat'].unique())
         owner_row = df_owners[df_owners['flat'] == selected_flat].iloc[0]
@@ -60,39 +65,26 @@ with tab1:
         today = datetime.now()
         total_months = (today.year - 2025) * 12 + today.month
         
-        # Look for 'due' or 'opening' in Owners sheet
+        # Safe way to get opening due
         due_col = next((c for c in df_owners.columns if 'due' in c), None)
-        opening_due = pd.to_numeric(owner_row[due_col], errors='coerce') if due_col else 0
-        if pd.isna(opening_due): opening_due = 0
+        opening_val = pd.to_numeric(owner_row[due_col], errors='coerce') if due_col else 0
+        opening_due = 0 if pd.isna(opening_val) else opening_val
         
         # --- 4. PAID CALCULATION ---
         paid_amt = 0
         if not df_coll.empty:
             df_coll.columns = df_coll.columns.str.strip()
-            
-            # Find the correct columns in Collections
-            c_flat_col = next((c for c in df_coll.columns if c.lower() == 'flat'), None)
-            # Specifically looking for your amount column
+            # Find Amount Column
             c_amt_col = next((c for c in df_coll.columns if 'received' in c.lower() or 'amount' in c.lower()), None)
+            c_flat_col = next((c for c in df_coll.columns if c.lower() == 'flat'), None)
 
-            if c_flat_col and c_amt_col:
-                # Filter payments for this flat
+            if c_amt_col and c_flat_col:
                 paid_rows = df_coll[df_coll[c_flat_col].astype(str).str.upper() == str(selected_flat).upper()]
                 paid_amt = pd.to_numeric(paid_rows[c_amt_col], errors='coerce').sum()
-            else:
-                # If we are in this block, the app is likely looking at the wrong tab
-                st.error(f"Sheet Layout Error: 'Collections' tab headers are missing or incorrect. Found: {list(df_coll.columns)}")
 
         # --- 5. RESULT ---
         current_due = (opening_due + (total_months * 2100)) - paid_amt
-        
-        # Display with large font
         st.metric("Total Outstanding", f"₹ {current_due:,.0f}")
-        
-        with st.expander("🔍 See Math"):
-            st.write(f"Opening Due: ₹{opening_due:,.0f}")
-            st.write(f"Maintenance (Jan 2025 to {today.strftime('%b %Y')}): ₹{total_months * 2100:,.0f}")
-            st.write(f"Total Paid: ₹{paid_amt:,.0f}")
                     
 
 # --- TAB 2: EXPENSES ---
@@ -127,6 +119,7 @@ with tab2:
 # --- TAB 3: RECORDS ---
 with tab3:
     st.dataframe(load_sheet("Collections"), width="stretch")
+
 
 
 
