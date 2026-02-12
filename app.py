@@ -30,14 +30,14 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data(worksheet_name):
     try:
-        # This converts any Google Sheet URL into a direct CSV download link for a specific tab
-        base_url = SHEET_URL.split('/edit')[0]
-        csv_url = f"{base_url}/export?format=csv&sheet={worksheet_name}"
-        return pd.read_csv(csv_url)
+        # We use the standard connection method which is most compatible
+        df = conn.read(spreadsheet=SHEET_URL, worksheet=worksheet_name, ttl=0)
+        return df
     except Exception as e:
-        st.error(f"Error loading {worksheet_name}: {e}")
-        # Fallback to the connector if the direct link fails
-        return conn.read(spreadsheet=SHEET_URL, worksheet=worksheet_name, ttl=0)
+        st.error(f"⚠️ Could not find the '{worksheet_name}' tab.")
+        st.info("Check: Is the tab name in Google Sheets exactly 'Owners' (with a capital O)?")
+        # Return an empty table so the rest of the app doesn't crash
+        return pd.DataFrame(columns=["flat", "owner", "due"])
 
 def update_db(df, worksheet):
     conn.update(spreadsheet=SHEET_URL, worksheet=worksheet, data=df)
