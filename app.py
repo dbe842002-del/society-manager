@@ -49,6 +49,8 @@ with tab1:
     
     # === CORRECT REAL-TIME DUE CALC ===
 today = datetime.now()
+total_months = 1 if today.month == 2 and today.year == 2026 else (today.year - 2025) * 12 + today.month
+
 
 # 1. Months from Jan 2025 to NOW (inclusive)
 start_date = datetime(2025, 1, 1)
@@ -171,4 +173,5 @@ with tab4:
     st.subheader("Payment Collections")
     df_coll = safe_read_gsheet("Collections")
     st.dataframe(df_coll, use_container_width=True)
+
 
