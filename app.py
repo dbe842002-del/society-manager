@@ -117,12 +117,12 @@ with tab1:
                     st.success("Payment saved to Google Sheet!")
                     st.rerun()
 
-with tab4:
+with tab2:
     st.subheader("Payment History")
     st.dataframe(df_coll, use_container_width=True)
 
 # --- TAB 2: EXPENSES ---
-with tab2:
+with tab4:
     df_exp = load_sheet("Expenses")
     if is_admin:
         with st.form("exp_form", clear_on_submit=True):
@@ -153,6 +153,7 @@ with tab2:
 # --- TAB 3: RECORDS ---
 with tab3:
     st.dataframe(load_sheet("Collections"), width="stretch")
+
 
 
 
