@@ -47,60 +47,66 @@ with tab1:
     df_coll = load_data("Collections")
     
     if not df_owners.empty:
-        # 1. Standardize Names (Force lowercase for Owners, Strip spaces)
-        df_owners.columns = df_owners.columns.str.strip().str.lower()
-        
-        # 2. Setup Constants
+        # 1. Setup Variables
         today = datetime.now()
         MONTHLY_MAINT = 2100
-        # Formula: Jan 2025 to Feb 2026 = 14 months
+        # Months since Jan 1st, 2025 (Feb 2026 = 14 months)
         total_months_due = (today.year - 2025) * 12 + today.month
 
-        # 3. Sum Payments from Collections
+        # 2. Process Collections (The "Paid" side)
         payments_dict = {}
         if not df_coll.empty:
-            df_coll.columns = df_coll.columns.str.strip() # Don't lowercase Collections yet
-            if "Flat" in df_coll.columns and "Amount" in df_coll.columns:
-                df_coll["Amount"] = pd.to_numeric(df_coll["Amount"], errors='coerce').fillna(0)
-                # Key: UpperCase + No Spaces
-                df_coll["Flat_Match"] = df_coll["Flat"].astype(str).str.strip().str.upper()
-                payments_dict = df_coll.groupby("Flat_Match")["Amount"].sum().to_dict()
+            # Clean column names to handle spaces or hidden characters
+            df_coll.columns = df_coll.columns.str.strip()
+            
+            # Use your specific column name: 'amount_received'
+            # We also check for 'Flat' (adjust to 'flat' if it's lowercase in that sheet too)
+            flat_col = "Flat" if "Flat" in df_coll.columns else "flat"
+            
+            if "amount_received" in df_coll.columns:
+                # Convert to numeric, replace empty/text with 0
+                df_coll["amount_received"] = pd.to_numeric(df_coll["amount_received"], errors='coerce').fillna(0)
+                
+                # Group payments by Flat
+                # We normalize the flat name to UPPERCASE to ensure a perfect match
+                df_coll["match_key"] = df_coll[flat_col].astype(str).str.strip().str.upper()
+                payments_dict = df_coll.groupby("match_key")["amount_received"].sum().to_dict()
 
-        # 4. Detailed Calculation
-        def get_details(row):
+        # 3. Calculation Function for Owners
+        def calculate_balance(row):
+            # Normalize owner flat name
             f_id = str(row.get("flat", "")).strip().upper()
-            opening = pd.to_numeric(row.get("due", 0), errors='coerce') or 0
             
-            # The Math
-            expected_total = opening + (total_months_due * MONTHLY_MAINT)
+            # Get Opening Due (from your 'due' column)
+            opening_due = pd.to_numeric(row.get("due", 0), errors='coerce')
+            if pd.isna(opening_due): opening_due = 0
+            
+            # Expected = Opening + (Months * 2100)
+            expected = opening_due + (total_months_due * MONTHLY_MAINT)
+            
+            # Get Paid amount from our dictionary
             paid = payments_dict.get(f_id, 0)
-            balance = expected_total - paid
             
-            return pd.Series([opening, total_months_due, expected_total, paid, balance])
+            return pd.Series([paid, expected - paid])
 
-        # Create the breakdown columns
-        df_owners[['Sheet_Due', 'Months_Count', 'Expected_Total', 'Total_Paid', 'Final_Balance']] = df_owners.apply(get_details, axis=1)
-
-        # 5. The Display
-        st.subheader("📊 Live Calculation Breakdown")
-        st.write(f"**Current Calculation Date:** {today.strftime('%B %Y')} ({total_months_due} months since Jan 2025)")
+        # 4. Apply and Display
+        # We ensure the Owners column names are clean
+        df_owners.columns = df_owners.columns.str.strip().str.lower()
         
-        # We show exactly how the app arrived at the result
-        debug_cols = ["flat", "owner", "Sheet_Due", "Expected_Total", "Total_Paid", "Final_Balance"]
-        st.dataframe(df_owners[debug_cols], width="stretch")
+        # Apply the calculation
+        df_owners[["Total_Paid", "Total_Outstanding"]] = df_owners.apply(calculate_balance, axis=1)
 
-        # --- TROUBLESHOOTING HELP ---
-        with st.expander("🛠️ Why is the math wrong? Click to check"):
-            st.write("### 1. Check for Name Mismatches")
-            st.write("Names found in Collections (Payments):", list(payments_dict.keys()))
-            st.write("Names found in Owners:", df_owners["flat"].astype(str).str.strip().str.upper().tolist())
-            
-            st.write("### 2. Check Your Formula")
-            st.write(f"The app is adding {total_months_due} months of maintenance (Rs. {total_months_due * MONTHLY_MAINT}) to your 2025 Opening Due.")
-            st.write("If the 'Expected_Total' is too high, we need to subtract months from the `total_months_due` variable.")
+        st.subheader("📊 Society Financial Summary")
+        st.write(f"**Period:** Jan 2025 to {today.strftime('%b %Y')} ({total_months_due} months)")
+        
+        # Display results
+        view_cols = ["flat", "owner", "due", "Total_Paid", "Total_Outstanding"]
+        # Filter to only show columns that actually exist
+        final_cols = [c for c in view_cols if c in df_owners.columns]
+        st.dataframe(df_owners[final_cols], width="stretch")
 
     else:
-        st.error("Could not load Owners sheet.")
+        st.error("Could not load Owners data. Please check your 'Owners' tab.")
         
 with tab3:
     st.subheader("📋 Master Records")
@@ -108,6 +114,7 @@ with tab3:
     df_view = load_data(view_choice)
     # Fixed the 'use_container_width' warning here too
     st.dataframe(df_view, width="stretch")
+
 
 
 
