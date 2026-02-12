@@ -69,7 +69,8 @@ with tab1:
             amount_col = next((col for col in df_coll.columns if any(x in col.lower() for x in ['amount_received', 'amount', 'received'])), 'amount_received')
             
             st.info(f"🔍 Using: flat='{flat_col}', amount='{amount_col}'")
-            
+            st.write(f"DEBUG flats in sheet: {df_coll['flat'].tolist()[:3]}")  # First 3 rows
+
             if flat_col in df_coll.columns and amount_col in df_coll.columns:
                 key = str(selected_flat).upper()
                 
@@ -134,6 +135,7 @@ with tab3:
     # Expense form here (same structure)
     st.dataframe(df_exp, use_container_width=True)
 with tab4: st.dataframe(df_coll, use_container_width=True)
+
 
 
 
