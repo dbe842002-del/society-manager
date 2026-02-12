@@ -28,8 +28,10 @@ st.set_page_config(page_title="Society Management Admin", layout="wide")
 # ================= 2. DATABASE CONNECTION =================
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-def load_data(worksheet):
-    return conn.read(spreadsheet=SHEET_URL, worksheet=worksheet, ttl="0")
+def load_data(worksheet_name):
+    # Fix 1: Removed quotes from 0 (ttl must be a number)
+    # Fix 2: Changed 'worksheet' to 'worksheet_name' to match variable
+    return conn.read(spreadsheet=SHEET_URL, worksheet=worksheet_name, ttl=0)
 
 def update_db(df, worksheet):
     conn.update(spreadsheet=SHEET_URL, worksheet=worksheet, data=df)
@@ -109,3 +111,4 @@ if is_admin:
         # Logic to get last row and generate PDF
 
         st.sidebar.write("Generating...")
+
