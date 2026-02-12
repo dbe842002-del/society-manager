@@ -91,4 +91,63 @@ with tab1:
             st.subheader("Record New Payment")
             c1, c2 = st.columns(2)
             with c1:
-                p_date = st.
+                p_date = st.date_input("Payment Date", today)
+                # Next Bill Logic
+                next_bill = 1001
+                if not df_coll.empty:
+                    bill_col = next((c for c in df_coll.columns if 'bill' in c), None)
+                    if bill_col:
+                        bills = pd.to_numeric(df_coll[bill_col], errors='coerce').dropna()
+                        if not bills.empty: next_bill = int(bills.max()) + 1
+                p_bill = st.number_input("Bill No", value=next_bill)
+            with c2:
+                p_mode = st.selectbox("Mode", ["Online", "Cash", "Cheque"])
+                months_list = [(datetime(2025, 1, 1) + pd.DateOffset(months=i)).strftime('%b-%Y') for i in range(24)]
+                p_months = st.multiselect("Paying for Months", months_list)
+                p_amt = st.number_input("Amount Received", value=len(p_months)*MONTHLY_MAINT if p_months else MONTHLY_MAINT)
+            
+            if st.form_submit_button("Save & Sync to Cloud"):
+                new_payment = pd.DataFrame([{
+                    "date": p_date.strftime("%d-%m-%Y"),
+                    "bill_no": p_bill,
+                    "flat": selected_flat,
+                    "owner": str(owner_row.get(name_col, '')),
+                    "months_paid": ", ".join(p_months),
+                    "amount_received": p_amt,
+                    "mode": p_mode
+                }])
+                updated_df = pd.concat([df_coll, new_payment], ignore_index=True)
+                conn.update(worksheet="Collections", data=updated_df)
+                st.success("✅ Payment saved and synced!")
+                st.cache_data.clear()
+                st.rerun()
+
+# --- TABS 2, 3, 4 (Reports) ---
+with tab2:
+    st.subheader("Owners Records")
+    st.dataframe(df_owners, use_container_width=True)
+
+with tab3:
+    st.subheader("Expense Log")
+    df_exp = safe_read_gsheet("Expenses")
+    st.dataframe(df_exp, use_container_width=True)
+    if is_admin:
+        with st.form("exp_form"):
+            e1, e2, e3 = st.columns(3)
+            with e1:
+                edate = st.date_input("Date")
+                ehead = st.selectbox("Category", ["Security", "Electricity", "Diesel", "Salary", "Misc"])
+            with e2:
+                eamt = st.number_input("Amount", min_value=0.0)
+            with e3:
+                edesc = st.text_input("Description")
+            if st.form_submit_button("Save Expense"):
+                new_exp = pd.DataFrame([{"date": edate.strftime("%d-%m-%Y"), "head": ehead, "description": edesc, "amount": eamt, "mode": "Cash"}])
+                updated_exp = pd.concat([df_exp, new_exp], ignore_index=True)
+                conn.update(worksheet="Expenses", data=updated_exp)
+                st.cache_data.clear()
+                st.rerun()
+
+with tab4:
+    st.subheader("Collection History")
+    st.dataframe(df_coll, use_container_width=True)
