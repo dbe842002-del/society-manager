@@ -78,7 +78,10 @@ with tab1:
                 flat_clean = df_coll[flat_col].astype(str).str.strip().str.upper().str.replace('-','').str.replace(' ','')
                 key_clean = key.replace('-','').replace(' ','')
                 
-                flat_payments = df_coll[flat_clean.str.contains(key_clean)]
+                flat_payments = df_coll[
+    df_coll[flat_col].astype(str).str.strip().str.upper().str.contains('A-106', na=False)
+]
+
                 
                 if not flat_payments.empty:
                     total_paid_amount = float(pd.to_numeric(flat_payments[amount_col], errors='coerce').sum())
@@ -135,6 +138,7 @@ with tab3:
     # Expense form here (same structure)
     st.dataframe(df_exp, use_container_width=True)
 with tab4: st.dataframe(df_coll, use_container_width=True)
+
 
 
 
