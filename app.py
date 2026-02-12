@@ -1,86 +1,114 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
+from streamlit_gsheets import GSheetsConnection
 
 # --- 1. CONFIGURATION ---
 MONTHLY_MAINT = 2100
 st.set_page_config(page_title="DBE Society Management", layout="wide")
 
-# --- 2. CONNECTION SETUP ---
-# This uses the 'sheet_url' from your Secrets automatically
+# Library used ONLY for writing/saving
 conn = st.connection("gsheets", type=GSheetsConnection)
 
+# --- 2. RELIABLE DATA LOADER ---
 def load_sheet(name):
     try:
-        # Get the base URL from secrets and strip everything after /edit
+        # Direct export link is the only way to avoid the "Tab Mismatch" bug
         base_url = st.secrets["connections"]["gsheets"]["spreadsheet"].split("/edit")[0]
-        # Direct export link for the specific tab name
         csv_url = f"{base_url}/export?format=csv&sheet={name}"
-        return pd.read_csv(csv_url)
+        df = pd.read_csv(csv_url)
+        # Clean columns: remove spaces and make lowercase for logic
+        df.columns = df.columns.str.strip()
+        return df
     except Exception as e:
         st.error(f"Failed to load {name}: {e}")
         return pd.DataFrame()
 
-# --- 3. AUTHENTICATION ---
+# --- 3. ADMIN AUTH ---
 with st.sidebar:
-    st.header("🔐 Admin Access")
-    pwd = st.text_input("Password", type="password")
+    pwd = st.text_input("Admin Password", type="password")
     is_admin = (pwd == st.secrets["admin_password"])
 
-# --- 4. MAIN INTERFACE ---
-st.title("🏢 DBE Society Management Pro")
-tab1, tab2, tab3 = st.tabs(["💰 Maintenance", "💸 Expenses", "📊 Master Records"])
+tab1, tab2 = st.tabs(["💰 Maintenance", "📊 Records"])
 
-# --- TAB 1: MAINTENANCE & PAYMENTS ---
 with tab1:
     df_owners = load_sheet("Owners")
     df_coll = load_sheet("Collections")
 
-    # This check ensures we actually got different data
-    if not df_coll.empty and not df_owners.empty:
-        # Standardize Owners
-        df_owners.columns = df_owners.columns.str.strip().str.lower()
+    if not df_owners.empty:
+        # Standardize Owners columns for selection
+        df_owners.columns = df_owners.columns.str.lower()
         
-        # UI for Flat Selection
-        selected_flat = st.selectbox("Select Flat", df_owners['flat'].unique())
-        owner_row = df_owners[df_owners['flat'] == selected_flat].iloc[0]
-        st.write(f"**Owner:** {owner_row.get('owner', 'N/A')}")
+        col1, col2 = st.columns(2)
+        with col1:
+            selected_flat = st.selectbox("Select Flat", df_owners['flat'].unique())
+            owner_row = df_owners[df_owners['flat'] == selected_flat].iloc[0]
+            st.write(f"**Owner:** {owner_row['owner']}")
 
-        # --- 3. DUES CALCULATION ---
+        # --- MATH ENGINE ---
         today = datetime.now()
+        # Jan 2025 to Feb 2026 = 14 months
         total_months = (today.year - 2025) * 12 + today.month
         
-        # Find 'due' column
-        due_col = next((c for c in df_owners.columns if 'due' in c), None)
-        opening_val = pd.to_numeric(owner_row[due_col], errors='coerce') if due_col else 0
-        opening_due = 0 if pd.isna(opening_val) else opening_val
+        # Opening Due (from Owners)
+        opening_due = pd.to_numeric(owner_row.get('opening due', 0), errors='coerce') or 0
         
-        # --- 4. PAID CALCULATION (From Collections) ---
+        # Total Paid (from Collections)
         paid_amt = 0
-        # Force column cleaning for Collections
-        df_coll.columns = df_coll.columns.str.strip().str.lower()
-        
-        # Find amount_received column
-        c_amt_col = next((c for c in df_coll.columns if 'received' in c or 'amount' in c), None)
-        c_flat_col = next((c for c in df_coll.columns if 'flat' in c), None)
+        if not df_coll.empty:
+            # Match flat exactly (case insensitive)
+            paid_rows = df_coll[df_coll['flat'].astype(str).str.upper() == str(selected_flat).upper()]
+            paid_amt = pd.to_numeric(paid_rows['amount_received'], errors='coerce').sum()
 
-        if c_amt_col and c_flat_col:
-            # Match flat (e.g. A-101)
-            paid_rows = df_coll[df_coll[c_flat_col].astype(str).str.upper() == str(selected_flat).upper()]
-            paid_amt = pd.to_numeric(paid_rows[c_amt_col], errors='coerce').sum()
-            
-            # --- 5. RESULT ---
-            current_due = (opening_due + (total_months * 2100)) - paid_amt
-            st.metric("Total Outstanding", f"₹ {current_due:,.0f}")
-            
-            with st.expander("📝 View Payment History"):
-                if not paid_rows.empty:
-                    st.dataframe(paid_rows[[c_flat_col, c_amt_col, 'date']])
-                else:
-                    st.write("No payments recorded for this flat.")
-        else:
-            st.error(f"Collections sheet headers incorrect. Found: {list(df_coll.columns)}")
+        current_due = (opening_due + (total_months * MONTHLY_MAINT)) - paid_amt
+
+        # --- DISPLAY RESULTS ---
+        st.metric("Total Outstanding Due", f"₹ {current_due:,.0f}")
+        
+        with st.expander("🔍 Calculation Breakdown"):
+            st.write(f"Period: Jan 2025 to {today.strftime('%b %Y')} ({total_months} months)")
+            st.write(f"Fixed Maintenance: {total_months} × ₹2100 = ₹{total_months*MONTHLY_MAINT:,.0f}")
+            st.write(f"Opening Due (Jan 2025): ₹{opening_due:,.0f}")
+            st.write(f"Total Amount Paid: ₹{paid_amt:,.0f}")
+
+        # --- ADMIN PAYMENT ENTRY ---
+        if is_admin:
+            st.divider()
+            st.subheader("📝 Record New Payment")
+            with st.form("pay_form", clear_on_submit=True):
+                c1, c2 = st.columns(2)
+                with c1:
+                    p_date = st.date_input("Payment Date", datetime.now())
+                    # Auto-increment Bill No
+                    next_bill = 1001
+                    if not df_coll.empty and 'bill_no' in df_coll.columns:
+                        next_bill = int(pd.to_numeric(df_coll['bill_no'], errors='coerce').max() + 1)
+                    p_bill = st.number_input("Bill No", value=next_bill)
+                with c2:
+                    p_mode = st.selectbox("Mode", ["Cash", "Online", "Cheque"])
+                    p_months = st.multiselect("Paying for Months", ["Jan-25", "Feb-25", "Mar-25", "Apr-25", "May-25", "Jun-25", "Jul-25", "Aug-25", "Sep-25", "Oct-25", "Nov-25", "Dec-25", "Jan-26", "Feb-26"])
+                
+                p_amt = st.number_input("Amount Received", value=len(p_months)*2100 if p_months else 2100)
+
+                if st.form_submit_button("Save & Sync"):
+                    new_data = pd.DataFrame([{
+                        "date": p_date.strftime("%d-%m-%Y"),
+                        "flat": selected_flat,
+                        "owner": owner_row['owner'],
+                        "months_paid": ", ".join(p_months),
+                        "amount_received": p_amt,
+                        "mode": p_mode,
+                        "bill_no": p_bill
+                    }])
+                    # Write to GSheets
+                    updated_df = pd.concat([df_coll, new_data], ignore_index=True)
+                    conn.update(worksheet="Collections", data=updated_df)
+                    st.success("Payment saved to Google Sheet!")
+                    st.rerun()
+
+with tab4:
+    st.subheader("Payment History")
+    st.dataframe(df_coll, use_container_width=True)
 
 # --- TAB 2: EXPENSES ---
 with tab2:
@@ -114,6 +142,7 @@ with tab2:
 # --- TAB 3: RECORDS ---
 with tab3:
     st.dataframe(load_sheet("Collections"), width="stretch")
+
 
 
 
