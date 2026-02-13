@@ -143,17 +143,27 @@ else:
 # --- TAB 2: FINANCIAL REPORTS ---
 with tabs[1]:
     st.header("📊 Financial Reports")
-    years_available = sorted(df_coll['date_dt'].dt.year.dropna().unique().astype(int), reverse=True)
-    if not years_available: years_available = [2025, 2026]
+    
+    # SAFE YEAR SELECTION
+    current_year = datetime.now().year
+    years_available = [current_year, current_year-1, 2025]
     yr_rpt = st.selectbox("Financial Year", years_available)
     
-    y_in = df_coll[df_coll['date_dt'].dt.year == yr_rpt]['amount_received'].apply(clean_num).sum()
-    y_out = df_exp[df_exp['date_dt'].dt.year == yr_rpt]['amount'].apply(clean_num).sum()
+    # SAFE INCOME CALC
+    y_in = 0
+    if not df_coll.empty and 'amount_received' in df_coll.columns:
+        y_in = df_coll['amount_received'].apply(clean_num).sum()
+    
+    # SAFE EXPENSE CALC  
+    y_out = 0
+    if not df_exp.empty and 'amount' in df_exp.columns:
+        y_out = df_exp['amount'].apply(clean_num).sum()
     
     m1, m2, m3 = st.columns(3)
     m1.metric(f"Income {yr_rpt}", f"₹{int(y_in):,}")
     m2.metric(f"Expense {yr_rpt}", f"₹{int(y_out):,}")
     m3.metric("Net Surplus", f"₹{int(y_in - y_out):,}")
+
     
     st.divider()
     m_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -255,6 +265,7 @@ if st.session_state.get('role') == "admin":
                             st.error(f"❌ Failed: {response.status_code}")
                     except Exception as e:
                         st.error(f"❌ Error: {str(e)}")
+
 
 
 
