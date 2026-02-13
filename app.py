@@ -95,12 +95,16 @@ with tab1:
     
     st.subheader(f"Account: {owner['owner']}")
 
-   # This will calculate the months from Jan 2025 to today automatically
-   today = datetime.now()
-   total_months = (today.year - 2025) * 12 + today.month
+   # --- MATH ENGINE ---
+    # Feb 2026 is month 14 since Jan 2025
+    today = datetime.now()
+    total_months = 14 
+    
+    opening = clean_num(owner.get('opening_due', 0))
     
     # Calculate Paid
-    paid_col = 'amount_received' if 'amount_received' in df_coll.columns else df_coll.columns[4]
+    # Ensure this matches the column name in your CSV
+    paid_col = 'amount_received'
     payments = df_coll[df_coll['flat'] == sel_flat]
     total_paid = payments[paid_col].apply(clean_num).sum()
     
@@ -122,5 +126,6 @@ with tab3:
     st.dataframe(df_coll, use_container_width=True)
     st.subheader("Owners List")
     st.dataframe(df_owners, use_container_width=True)
+
 
 
