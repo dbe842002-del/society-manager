@@ -3,17 +3,14 @@ import pandas as pd
 from datetime import datetime
 import re
 
-# ================= 1. CONFIGURATION & AUTH =================
+# ================= 1. SETTINGS =================
 MONTHLY_MAINT = 2100
 st.set_page_config(page_title="DBE Society Portal", layout="wide")
 
-# Initialize Session States
-if "role" not in st.session_state:
-    st.session_state.role = None
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
+if "role" not in st.session_state: st.session_state.role = None
+if "authenticated" not in st.session_state: st.session_state.authenticated = False
 
-# ================= 2. DATA LOADERS =================
+# ================= 2. DATA PROCESSING HELPERS =================
 def get_csv_url(sheet_name):
     try:
         raw_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
@@ -27,9 +24,6 @@ def load_data(sheet_name):
     try:
         df = pd.read_csv(url)
         df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
-        # Date conversion for Expenses
-        if 'date' in df.columns:
-            df['date_dt'] = pd.to_datetime(df['date'], errors='coerce')
         return df
     except: return pd.DataFrame()
 
@@ -44,173 +38,133 @@ def clean_num(val):
 if not st.session_state.authenticated:
     st.title("🏢 DBE Society Management Portal")
     st.markdown("---")
-    
     col1, col2 = st.columns([1.5, 1])
-    
     with col1:
-        st.image("https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=800&q=80", caption="DBE Residency", use_container_width=True)
-        st.info("Welcome! Please log in to access the society's financial records and maintenance status.")
-
+        st.image("https://images.unsplash.com/photo-1590247813693-5541d1c609fd?auto=format&fit=crop&w=800", caption="DBE Residency", use_container_width=True)
     with col2:
-        st.subheader("🔑 Secure Access")
-        role_selection = st.radio("Access Level", ["Viewer (Resident)", "Admin (Management)"], index=0)
-        password = st.text_input("Enter Password", type="password")
-        
-        if st.button("Log In"):
-            if role_selection == "Admin (Management)" and password == st.secrets.get("admin_password", "admin123"):
-                st.session_state.authenticated = True
-                st.session_state.role = "admin"
+        st.subheader("🔐 Secure Login")
+        role = st.selectbox("I am a:", ["Viewer (Resident)", "Admin (Management)"])
+        pwd = st.text_input("Password", type="password")
+        if st.button("Access Portal"):
+            if role == "Admin (Management)" and pwd == st.secrets.get("admin_password", "admin123"):
+                st.session_state.authenticated, st.session_state.role = True, "admin"
                 st.rerun()
-            elif role_selection == "Viewer (Resident)" and password == st.secrets.get("view_password", "society123"):
-                st.session_state.authenticated = True
-                st.session_state.role = "viewer"
+            elif role == "Viewer (Resident)" and pwd == st.secrets.get("view_password", "society123"):
+                st.session_state.authenticated, st.session_state.role = True, "viewer"
                 st.rerun()
-            else:
-                st.error("Invalid credentials. Please try again.")
+            else: st.error("Wrong password")
     st.stop()
 
-# ================= 4. DATA PROCESSING =================
+# ================= 4. LOAD & CALCULATE =================
 df_owners = load_data("Owners")
 df_coll = load_data("Collections")
 df_exp = load_data("Expenses")
 
-# Pre-calculate Globals
+# Global Math
 today = datetime.now()
-# Assuming billing started Jan 2025
-total_months = (today.year - 2025) * 12 + today.month
+total_months = (today.year - 2025) * 12 + today.month # Months since Jan 2025
 
-# ================= 5. SIDEBAR NAVIGATION =================
-st.sidebar.title(f"👤 {st.session_state.role.upper()} PORTAL")
-if st.sidebar.button("🚪 Log Out"):
-    st.session_state.authenticated = False
-    st.session_state.role = None
-    st.rerun()
-
-# ================= 6. INTERFACE LOGIC =================
-
-# Define available tabs based on role
+# ================= 5. TABS =================
 if st.session_state.role == "admin":
-    tabs = st.tabs(["📊 Reports", "💰 Maintenance Dues", "💸 Expenses", "📋 Database"])
+    t_report, t_maint, t_db = st.tabs(["📊 Financial Reports", "💰 Maintenance Status", "⚙️ Admin DB"])
 else:
-    # Viewer sees only Maintenance and Report (as per your request)
-    tabs = st.tabs(["📊 Reports", "💰 Maintenance Dues"])
+    t_report, t_maint = st.tabs(["📊 Financial Reports", "💰 Maintenance Status"])
 
 # ----------------- TAB: REPORTS -----------------
-with tabs[0]:
-    st.header("Financial Reporting Dashboard")
+with t_report:
+    # --- 1. YEARLY SUMMARY (Previous Year Jan-Dec) ---
+    prev_year = today.year - 1
+    st.header(f"📅 Yearly Report: {prev_year}")
     
-    # --- SUB-SECTION: YEARLY REPORT ---
-    st.subheader("📅 Yearly Financial Summary")
-    # Group income/expenses by year-month
-    # Income logic
-    df_coll['amount_num'] = df_coll['amount_received'].apply(clean_num)
+    # Filter collections/expenses for previous year
     df_coll['date_dt'] = pd.to_datetime(df_coll['date'], errors='coerce')
-    income_yearly = df_coll.groupby(df_coll['date_dt'].dt.year)['amount_num'].sum()
-    
-    # Expense logic
-    df_exp['amount_num'] = df_exp['amount'].apply(clean_num)
     df_exp['date_dt'] = pd.to_datetime(df_exp['date'], errors='coerce')
-    expense_yearly = df_exp.groupby(df_exp['date_dt'].dt.year)['amount_num'].sum()
     
-    y_col1, y_col2 = st.columns(2)
-    with y_col1:
-        st.write("**Total Yearly Income**")
-        st.table(income_yearly.rename("Total Income (₹)"))
-    with y_col2:
-        st.write("**Total Yearly Expenses**")
-        st.table(expense_yearly.rename("Total Expense (₹)"))
+    y_inc = df_coll[df_coll['date_dt'].dt.year == prev_year]['amount_received'].apply(clean_num).sum()
+    y_exp = df_exp[df_exp['date_dt'].dt.year == prev_year]['amount'].apply(clean_num).sum()
+    
+    yc1, yc2, yc3 = st.columns(3)
+    yc1.metric(f"Total Income ({prev_year})", f"₹{int(y_inc):,}")
+    yc2.metric(f"Total Expense ({prev_year})", f"₹{int(y_exp):,}")
+    yc3.metric("Yearly Savings", f"₹{int(y_inc - y_exp):,}")
 
     st.divider()
 
-    # --- SUB-SECTION: MONTHLY REPORT ---
-    st.subheader("🗓️ Monthly Financial Detail")
-    m_list = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    selected_month = st.selectbox("Filter by Month", m_list, index=today.month-1)
-    
-    m_inc = df_coll[df_coll['months_paid'].str.contains(selected_month, na=False, case=False)]
-    m_exp = df_exp[df_exp['month'].str.contains(selected_month, na=False, case=False)]
-    
+    # --- 2. MONTHLY CASH FLOW REPORT ---
+    st.subheader("🗓️ Monthly Cash Flow & Expense Head-wise")
+    m_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    sel_m = st.selectbox("Select Month to view details", m_names, index=today.month-1)
+
+    # Cash/Bank Logic (Filtering by Mode)
+    def get_flow(df, month_str, mode_list):
+        # Income for this month
+        inc = df_coll[(df_coll['months_paid'].str.contains(month_str, na=False)) & (df_coll['mode'].isin(mode_list))]
+        # Expenses for this month
+        exp = df_exp[(df_exp['month'].str.contains(month_str, na=False)) & (df_exp['mode'].isin(mode_list))]
+        
+        # Calculate Opening (All sums prior to this month)
+        # Note: For accurate opening, usually we sum all history up to month start
+        return inc['amount_received'].apply(clean_num).sum(), exp['amount'].apply(clean_num).sum()
+
+    cash_in, cash_out = get_flow(df_coll, sel_m, ["Cash", "cash"])
+    bank_in, bank_out = get_flow(df_coll, sel_m, ["Online", "Chq", "Cheque"])
+
     mc1, mc2 = st.columns(2)
-    mc1.metric(f"Income in {selected_month}", f"₹{m_inc['amount_num'].sum():,.0f}")
-    mc2.metric(f"Expenses in {selected_month}", f"₹{m_exp['amount_num'].sum():,.0f}")
-    
-    with st.expander(f"View {selected_month} Transactions"):
-        st.write("**Monthly Income Details**")
-        st.dataframe(m_inc[['date', 'flat', 'owner', 'amount_received']], use_container_width=True)
-        st.write("**Monthly Expense Details**")
-        st.dataframe(m_exp[['date', 'description', 'amount']], use_container_width=True)
+    with mc1:
+        st.info("**Cash Account**")
+        st.write(f"Collections: ₹{int(cash_in):,}")
+        st.write(f"Expenses: ₹{int(cash_out):,}")
+    with mc2:
+        st.success("**Bank Account**")
+        st.write(f"Collections: ₹{int(bank_in):,}")
+        st.write(f"Expenses: ₹{int(bank_out):,}")
+
+    st.write(f"**Detailed Expenses for {sel_m} (Head-wise)**")
+    m_exp_detail = df_exp[df_exp['month'].str.contains(sel_m, na=False)]
+    if not m_exp_detail.empty:
+        st.dataframe(m_exp_detail[['date', 'head', 'description', 'amount', 'mode']], use_container_width=True, hide_index=True)
+    else:
+        st.write("No expenses recorded for this month.")
 
     st.divider()
 
-    # --- SUB-SECTION: OWNER DUES LIST ---
-    st.subheader("📋 Master Owner Dues List")
-    report_data = []
+    # --- 3. MASTER OWNER DUES LIST ---
+    st.subheader("📋 Master Dues List")
+    report_list = []
     for _, row in df_owners.iterrows():
         flat = row['flat']
         opening = clean_num(row.get('opening_due', 0))
         paid = clean_num(df_coll[df_coll['flat'] == flat]['amount_received'].sum())
         accrued = total_months * MONTHLY_MAINT
         due = (opening + accrued) - paid
-        report_data.append({
-            "Flat": flat,
-            "Owner": row['owner'],
-            "Opening Due": opening,
-            "Total Paid": paid,
-            "Current Outstanding": due
-        })
-    
-    final_report_df = pd.DataFrame(report_data)
-    
-    # Styling: Highlight debtors in red
-    def highlight_debt(s):
-        return ['color: #ff4b4b' if v > 0 else 'color: #09ab3b' for v in s]
-    
-    st.dataframe(final_report_df.style.apply(highlight_debt, subset=['Current Outstanding']), use_container_width=True)
-
-# ----------------- TAB: MAINTENANCE DUES -----------------
-with tabs[1]:
-    st.subheader("Individual Flat Statement")
-    search_flat = st.selectbox("Search Flat", sorted(df_owners['flat'].unique()))
-    
-    o_data = df_owners[df_owners['flat'] == search_flat].iloc[0]
-    p_history = df_coll[df_coll['flat'] == search_flat]
-    
-    # Calculations
-    f_opening = clean_num(o_data.get('opening_due', 0))
-    f_paid = clean_num(p_history['amount_received'].sum())
-    f_accrued = total_months * MONTHLY_MAINT
-    f_balance = (f_opening + f_accrued) - f_paid
-    
-    sc1, sc2 = st.columns([1, 2])
-    with sc1:
-        st.info(f"👤 **Owner:** {o_data['owner']}")
-        st.metric("Balance Due", f"₹{f_balance:,.0f}")
         
-    with sc2:
-        st.write("**Recent Payment History**")
-        st.dataframe(p_history[['date', 'months_paid', 'amount_received', 'mode']], use_container_width=True, hide_index=True)
+        entry = {"Flat": flat, "Owner": row['owner'], "Current Outstanding": int(due)}
+        # Add 'Total Paid' only if Admin
+        if st.session_state.role == "admin":
+            entry["Total Paid"] = int(paid)
+        report_list.append(entry)
+    
+    df_final = pd.DataFrame(report_list)
+    st.dataframe(df_final.style.applymap(lambda x: 'color: red' if isinstance(x, int) and x > 0 else '', subset=['Current Outstanding']), use_container_width=True)
 
-    # --- ADMIN ONLY: ADD PAYMENT ---
-    if st.session_state.role == "admin":
-        st.divider()
-        with st.form("admin_pay"):
-            st.subheader("➕ Record New Payment")
-            a1, a2, a3 = st.columns(3)
-            new_date = a1.date_input("Date")
-            new_amt = a2.number_input("Amount Received", value=2100)
-            new_months = a3.text_input("Months Paid (e.g., Mar-26)")
-            if st.form_submit_button("Save Payment to Sheet"):
-                # Append logic here using conn.update
-                st.success("Record saved! (Simulated)")
+# ----------------- TAB: MAINTENANCE STATUS -----------------
+with t_maint:
+    st.subheader("Resident Account Statement")
+    target_flat = st.selectbox("Select Flat", sorted(df_owners['flat'].unique()))
+    
+    # Simple view for residents
+    f_pats = df_coll[df_coll['flat'] == target_flat]
+    total_f_paid = f_pats['amount_received'].apply(clean_num).sum()
+    f_opening = clean_num(df_owners[df_owners['flat'] == target_flat].iloc[0].get('opening_due', 0))
+    f_due = (f_opening + (total_months * MONTHLY_MAINT)) - total_f_paid
+    
+    c1, c2 = st.columns(2)
+    c1.metric("Balance Outstanding", f"₹{int(f_due):,}")
+    c2.write("**Your Payment History**")
+    st.dataframe(f_pats[['date', 'months_paid', 'amount_received']], hide_index=True)
 
-# ----------------- ADMIN ONLY TABS -----------------
+# ----------------- ADMIN ONLY -----------------
 if st.session_state.role == "admin":
-    with tabs[2]:
-        st.subheader("Expense Management")
-        st.dataframe(df_exp, use_container_width=True)
-    with tabs[3]:
-        st.subheader("Raw Databases")
-        st.write("Owners")
-        st.dataframe(df_owners, use_container_width=True)
-        st.write("Collections")
-        st.dataframe(df_coll, use_container_width=True)
+    with t_db:
+        st.write("Raw Expense Log")
+        st.dataframe(df_exp)
