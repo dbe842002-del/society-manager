@@ -224,74 +224,67 @@ with tabs[2]:
 
 # ================= ADMIN TABS =================
 if st.session_state.role == "admin":
-    # Flat Lookup
+    # Tab 3: Flat Lookup
     with tabs[3]:
         st.header("👤 Flat Details")
-        flat_sel = st.selectbox("Flat", sorted(df_owners['flat'].dropna().unique()))
-        st.dataframe(df_owners[df_owners['flat'] == flat_sel], use_container_width=True)
-        st.dataframe(df_coll[df_coll['flat'] == flat_sel], use_container_width=True)
+        flat_sel = st.selectbox("Select Flat for Detailed View", sorted(df_owners['flat'].dropna().unique()))
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("Owner Info")
+            st.write(df_owners[df_owners['flat'] == flat_sel])
+        with col2:
+            st.subheader("Payment History")
+            st.write(df_coll[df_coll['flat'] == flat_sel])
     
-    # Admin Control
-    # Admin Control
+    # Tab 4: Admin Control & Delete
     with tabs[4]:
         st.header("⚙️ Admin Panel")
         
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("🔄 Refresh Data"):
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("🔄 Refresh All Data"):
                 st.cache_data.clear()
                 st.rerun()
-
-        with col2:
-            # --- DELETE LAST ENTRY SECTION ---
-            st.subheader("🗑️ Danger Zone")
-            delete_sheet = st.selectbox("Select Sheet to Delete From", ["Collections", "Expenses"])
-            
-            if st.button(f"Delete Last {delete_sheet} Entry"):
-                # You'll need to deploy a Google Apps Script (see step 2)
-                script_url = st.secrets.get("connections", {}).get("gsheets", {}).get("script_url", "")
-                
-                if script_url:
-                    try:
-                        # Sending request to Apps Script to delete the last row
-                        response = requests.post(script_url, json={"sheet": delete_sheet, "action": "delete_last"})
-                        if response.status_code == 200:
-                            st.warning(f"✅ Last entry in {delete_sheet} deleted!")
-                            st.cache_data.clear()
-                            st.rerun()
-                        else:
-                            st.error("Failed to delete. Check Script permissions.")
-                    except Exception as e:
-                        st.error(f"Error: {e}")
-                else:
-                    st.info("💡 To enable deletion, please configure the Google Apps Script URL in secrets.")
-
-        st.subheader("Raw Data Viewer")
-        sheet_sel = st.selectbox("Sheet", ["Owners", "Collections", "Expenses", "Balance"])
-        st.dataframe(load_data(sheet_sel), use_container_width=True)
-    # Quick Entry
-    with st.sidebar:
-        st.header("➕ Quick Entry")
-        entry_type = st.radio("Type", ["Payment", "Expense"], horizontal=True)
         
-        with st.form("quick_entry"):
-            date = st.date_input("Date", datetime.now())
-            if entry_type == "Payment":
-                flat = st.selectbox("Flat", df_owners['flat'].dropna().unique())
-                amount = st.number_input("Amount", min_value=0.0)
-                months = st.text_input("Months")
-                mode = st.selectbox("Mode", ["Cash", "UPI", "Bank"])
-            else:
-                category = st.selectbox("Category", ["Electricity", "Salary", "Misc"])
-                amount = st.number_input("Amount", min_value=0.0)
-                vendor = st.text_input("Vendor")
-                mode = st.selectbox("Mode", ["Cash", "Bank"])
+        with c2:
+            # DELETE LAST ENTRY LOGIC
+            st.subheader("🗑️ Delete Last Entry")
+            target_sheet = st.selectbox("Select Sheet", ["Collections", "Expenses"], key="del_sheet")
+            if st.button(f"Delete Last Row from {target_sheet}"):
+                # Note: This requires the Apps Script Web App URL to function
+                st.warning("Feature requires Google Apps Script integration to modify the source sheet.")
+        
+        st.divider()
+        st.subheader("Raw Data Preview")
+        sheet_sel = st.selectbox("View Raw Sheet", ["Owners", "Collections", "Expenses", "Balance"])
+        st.dataframe(load_data(sheet_sel), use_container_width=True)
+    
+    # Tab 5: Add Entry (This was the missing part!)
+    with tabs[5]:
+        st.header("➕ Add New Transaction")
+        entry_type = st.radio("Entry Type", ["Payment (Income)", "Expense"], horizontal=True)
+        
+        with st.form("new_entry_form"):
+            col1, col2 = st.columns(2)
             
-            if st.form_submit_button("Save"):
-                st.success("✅ Saved!")
+            with col1:
+                entry_date = st.date_input("Date", datetime.now())
+                mode = st.selectbox("Payment Mode", ["UPI", "Cash", "Bank Transfer"])
+            
+            with col2:
+                if entry_type == "Payment (Income)":
+                    f_num = st.selectbox("Flat Number", df_owners['flat'].dropna().unique())
+                    amt = st.number_input("Amount (₹)", min_value=0)
+                    note = st.text_input("Months Paid (e.g. Jan-Feb)")
+                else:
+                    head = st.text_input("Expense Head / Category")
+                    amt = st.number_input("Amount (₹)", min_value=0)
+                    note = st.text_input("Paid To / Vendor")
+            
+            submit = st.form_submit_button("Save Entry")
+            if submit:
+                st.info("Entry recorded in the UI. Note: To save permanently to Google Sheets, you must connect a 'Write' API.")
                 st.cache_data.clear()
-                st.rerun()
-
 # ——— NEW: ADD ENTRY TAB ———
     with tabs[5]:
         st.header("➕ New Data Entry")
@@ -323,6 +316,7 @@ if st.session_state.role == "admin":
 # ================= FOOTER =================
 st.markdown("---")
 st.markdown("*DBE Society Management Portal v2.0 | Built with ❤️ for efficient management*")
+
 
 
 
