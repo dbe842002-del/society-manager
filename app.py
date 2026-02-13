@@ -12,19 +12,21 @@ st.set_page_config(page_title="DBE Society Portal", layout="wide")
 # ================= THEME =================
 st.markdown("""
 <style>
-.main {background-color: #f8f9fa;}
+.main { background-color: #f8f9fa; }
 div[data-testid="stMetric"] {
-    background: white; border: 1px solid #e0e0e0; padding: 15px; 
-    border-radius: 10px; box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
+    background-color: #ffffff; border: 1px solid #e0e0e0;
+    padding: 15px; border-radius: 10px;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
 }
-.defaulter-card {
-    background: #fff5f5; border: 1px solid #feb2b2; border-left: 5px solid #f56565;
-    padding: 20px; border-radius: 10px; margin-bottom: 20px; text-align: center;
-}
-.stTabs [data-baseweb="tab"] {background: #f0f2f6; border-radius: 5px;}
-.stTabs [aria-selected="true"] {background: #007bff !important; color: white !important;}
+.defaulter-card { ... }
+
+/* NEW - HIDE SHARE BAR */
+[data-testid="collapsedControl"], 
+.element-container [data-testid="stToolbar"] { display: none !important; }
+#MainMenu, header[role="banner"] { visibility: hidden !important; }
 </style>
 """, unsafe_allow_html=True)
+
 
 # ================= DATA LOADER =================
 @st.cache_data(ttl=300)
@@ -247,3 +249,4 @@ if st.session_state.role == "admin":
 # ================= FOOTER =================
 st.markdown("---")
 st.markdown("*DBE Society Management Portal v2.0 | Built with ❤️ for efficient management*")
+
