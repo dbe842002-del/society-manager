@@ -23,7 +23,12 @@ def load_data(sheet_name):
     url = get_csv_url(sheet_name)
     try:
         df = pd.read_csv(url)
+        # Standardize columns to lowercase
         df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
+        # Standardize Date column
+        date_col = 'date' if 'date' in df.columns else None
+        if date_col:
+            df['date_dt'] = pd.to_datetime(df[date_col], errors='coerce')
         return df
     except: return pd.DataFrame()
 
@@ -40,9 +45,9 @@ if not st.session_state.authenticated:
     st.markdown("---")
     col1, col2 = st.columns([1.5, 1])
     with col1:
-        st.image("https://images.unsplash.com/photo-1590247813693-5541d1c609fd?auto=format&fit=crop&w=800", caption="DBE Residency", use_container_width=True)
+        st.image("https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=800&q=80", caption="DBE Residency", use_container_width=True)
     with col2:
-        st.subheader("🔐 Secure Login")
+        st.subheader("🔐 Secure Access")
         role = st.selectbox("I am a:", ["Viewer (Resident)", "Admin (Management)"])
         pwd = st.text_input("Password", type="password")
         if st.button("Access Portal"):
@@ -55,48 +60,50 @@ if not st.session_state.authenticated:
             else: st.error("Wrong password")
     st.stop()
 
-# ================= 4. LOAD & CALCULATE =================
+# ================= 4. LOAD & PREPARE DATA =================
 df_owners = load_data("Owners")
 df_coll = load_data("Collections")
 df_exp = load_data("Expenses")
 
-# Date Conversions
-df_coll['date_dt'] = pd.to_datetime(df_coll['date'], errors='coerce')
-df_exp['date_dt'] = pd.to_datetime(df_exp['date'], errors='coerce')
-
+# Pre-calculate totals for calculations
 today = datetime.now()
-total_months = (today.year - 2025) * 12 + today.month # Assuming Jan 2025 start
+total_months = (today.year - 2025) * 12 + today.month
 
 # ================= 5. TABS LOGIC =================
 if st.session_state.role == "admin":
     t_maint, t_master, t_reports, t_db = st.tabs(["💰 Maintenance Due", "📋 Master List", "📊 Financial Reports", "⚙️ Admin DB"])
 else:
-    # Viewer sees exactly as requested
     t_maint, t_master, t_reports = st.tabs(["💰 Maintenance Due", "📋 Master List", "📊 Financial Reports"])
 
 # ----------------- TAB: MAINTENANCE DUE (Individual) -----------------
 with t_maint:
     st.subheader("Individual Resident Statement")
+    
+    # Year Selection for filtering history
+    available_years = sorted(df_coll['date_dt'].dt.year.dropna().unique().astype(int), reverse=True)
+    sel_year_maint = st.selectbox("Select Year to view History", available_years, key="maint_year")
+    
     search_flat = st.selectbox("Select Your Flat", sorted(df_owners['flat'].unique()))
     
     o_row = df_owners[df_owners['flat'] == search_flat].iloc[0]
-    p_history = df_coll[df_coll['flat'] == search_flat]
+    p_history_all = df_coll[df_coll['flat'] == search_flat]
+    p_history_year = p_history_all[p_history_all['date_dt'].dt.year == sel_year_maint]
     
     f_opening = clean_num(o_row.get('opening_due', 0))
-    f_paid = p_history['amount_received'].apply(clean_num).sum()
-    f_due = (f_opening + (total_months * MONTHLY_MAINT)) - f_paid
+    f_paid_total = p_history_all['amount_received'].apply(clean_num).sum()
+    f_due = (f_opening + (total_months * MONTHLY_MAINT)) - f_paid_total
     
     c1, c2 = st.columns(2)
     with c1:
         st.info(f"👤 **Owner:** {o_row['owner']}")
         st.metric("Total Balance Outstanding", f"₹{int(f_due):,}")
     with c2:
-        st.write("**Payment History**")
-        st.dataframe(p_history[['date', 'months_paid', 'amount_received', 'mode']], use_container_width=True, hide_index=True)
+        st.write(f"**Payment History for {sel_year_maint}**")
+        st.dataframe(p_history_year[['date', 'months_paid', 'amount_received', 'mode']], use_container_width=True, hide_index=True)
 
 # ----------------- TAB: MASTER LIST (All Flats) -----------------
 with t_master:
-    st.subheader("📋 Master Dues Status")
+    st.subheader("📋 Master Dues Status (As of Today)")
     report_list = []
     for _, row in df_owners.iterrows():
         flat = row['flat']
@@ -106,7 +113,6 @@ with t_master:
         due = (opening + accrued) - paid
         
         entry = {"Flat": flat, "Owner": row['owner'], "Current Outstanding": int(due)}
-        # "Total Paid" is only added for Admin
         if st.session_state.role == "admin":
             entry["Total Paid"] = int(paid)
         report_list.append(entry)
@@ -115,52 +121,78 @@ with t_master:
 
 # ----------------- TAB: FINANCIAL REPORTS -----------------
 with t_reports:
-    # --- Yearly Section ---
-    st.header("📅 Yearly Financial Report")
-    available_years = sorted(df_coll['date_dt'].dt.year.dropna().unique().astype(int), reverse=True)
-    sel_year = st.selectbox("Select Year for Summary", available_years)
+    # --- 1. YEARLY SUMMARY (Previous Year Jan-Dec) ---
+    prev_year = today.year - 1
+    st.header(f"📅 Yearly Report: Jan to Dec {prev_year}")
     
-    y_inc = df_coll[df_coll['date_dt'].dt.year == sel_year]['amount_received'].apply(clean_num).sum()
-    y_exp = df_exp[df_exp['date_dt'].dt.year == sel_year]['amount'].apply(clean_num).sum()
+    y_inc = df_coll[df_coll['date_dt'].dt.year == prev_year]['amount_received'].apply(clean_num).sum()
+    y_exp = df_exp[df_exp['date_dt'].dt.year == prev_year]['amount'].apply(clean_num).sum()
     
     yc1, yc2, yc3 = st.columns(3)
-    yc1.metric(f"Total Income ({sel_year})", f"₹{int(y_inc):,}")
-    yc2.metric(f"Total Expense ({sel_year})", f"₹{int(y_exp):,}")
-    yc3.metric("Yearly Savings", f"₹{int(y_inc - y_exp):,}")
+    yc1.metric(f"Total Income ({prev_year})", f"₹{int(y_inc):,}")
+    yc2.metric(f"Total Expense ({prev_year})", f"₹{int(y_exp):,}")
+    yc3.metric("Yearly Net Savings", f"₹{int(y_inc - y_exp):,}")
 
     st.divider()
 
-    # --- Monthly Cash Flow Section ---
-    st.header("🗓️ Monthly Cash Flow & Expense Details")
-    m_list = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    sel_m = st.selectbox("Select Month for Detail", m_list, index=today.month-1)
+    # --- 2. MONTHLY CASH FLOW REPORT ---
+    st.header("🗓️ Monthly Cash Flow & Expense Head-wise")
+    m_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    sel_m_idx = today.month - 1
+    sel_m = st.selectbox("Select Month for Detail", m_names, index=sel_m_idx)
+    sel_y = st.selectbox("Select Year for Monthly Report", available_years)
 
-    # Filter data for month
-    m_inc_data = df_coll[df_coll['months_paid'].str.contains(sel_m, na=False, case=False)]
-    m_exp_data = df_exp[df_exp['month'].str.contains(sel_m, na=False, case=False)]
-
-    # Cash vs Bank Logic
-    cash_in = m_inc_data[m_inc_data['mode'].str.lower().contains('cash', na=False)]['amount_received'].apply(clean_num).sum()
-    cash_out = m_exp_data[m_exp_data['mode'].str.lower().contains('cash', na=False)]['amount'].apply(clean_num).sum()
+    # Calculate exact Start and End dates for filtering
+    sel_month_num = m_names.index(sel_m) + 1
+    start_date = datetime(sel_y, sel_month_num, 1)
     
-    bank_in = m_inc_data[~m_inc_data['mode'].str.lower().contains('cash', na=False)]['amount_received'].apply(clean_num).sum()
-    bank_out = m_exp_data[~m_exp_data['mode'].str.lower().contains('cash', na=False)]['amount'].apply(clean_num).sum()
+    # Filter Functions
+    def filter_by_date(df, date_field, start, end):
+        return df[(df[date_field] >= start) & (df[date_field] < end)]
 
+    # Account Balance Logic
+    def get_account_stats(df_c, df_e, mode_keywords, current_month_start):
+        # Opening: All before this month
+        op_inc = df_c[(df_c['date_dt'] < current_month_start) & (df_c['mode'].str.lower().str.contains('|'.join(mode_keywords), na=False, regex=True))]['amount_received'].apply(clean_num).sum()
+        op_exp = df_e[(df_e['date_dt'] < current_month_start) & (df_e['mode'].str.lower().str.contains('|'.join(mode_keywords), na=False, regex=True))]['amount'].apply(clean_num).sum()
+        opening_bal = op_inc - op_exp
+        
+        # Current Month
+        next_month = (current_month_start.replace(day=28) + pd.Timedelta(days=4)).replace(day=1)
+        curr_inc_df = df_c[(df_c['date_dt'] >= current_month_start) & (df_c['date_dt'] < next_month) & (df_c['mode'].str.lower().str.contains('|'.join(mode_keywords), na=False, regex=True))]
+        curr_exp_df = df_e[(df_e['date_dt'] >= current_month_start) & (df_e['date_dt'] < next_month) & (df_e['mode'].str.lower().str.contains('|'.join(mode_keywords), na=False, regex=True))]
+        
+        curr_inc = curr_inc_df['amount_received'].apply(clean_num).sum()
+        curr_exp = curr_exp_df['amount'].apply(clean_num).sum()
+        
+        return int(opening_bal), int(curr_inc), int(curr_exp), int(opening_bal + curr_inc - curr_exp), curr_exp_df
+
+    # 1. Cash Stats
+    c_op, c_in, c_out, c_cl, c_exp_df = get_account_stats(df_coll, df_exp, ['cash'], start_date)
+    # 2. Bank Stats (Everything NOT cash)
+    b_op, b_in, b_out, b_cl, b_exp_df = get_account_stats(df_coll, df_exp, ['online', 'chq', 'cheque', 'neft', 'upi'], start_date)
+
+    # UI Display
     mc1, mc2 = st.columns(2)
     with mc1:
         st.subheader("💵 Cash Account")
-        st.write(f"Collections: ₹{int(cash_in):,}")
-        st.write(f"Expenses: ₹{int(cash_out):,}")
-        st.write(f"**Monthly Net Cash:** ₹{int(cash_in - cash_out):,}")
+        st.write(f"Opening Balance: ₹{c_op:,}")
+        st.write(f"Cash Collections: ₹{c_in:,}")
+        st.write(f"Cash Expenses: ₹{c_out:,}")
+        st.markdown(f"**Closing Cash: ₹{c_cl:,}**")
+        
     with mc2:
         st.subheader("🏦 Bank Account")
-        st.write(f"Collections: ₹{int(bank_in):,}")
-        st.write(f"Expenses: ₹{int(bank_out):,}")
-        st.write(f"**Monthly Net Bank:** ₹{int(bank_in - bank_out):,}")
+        st.write(f"Opening Balance: ₹{b_op:,}")
+        st.write(f"Bank Collections: ₹{b_in:,}")
+        st.write(f"Bank Expenses: ₹{b_out:,}")
+        st.markdown(f"**Closing Bank: ₹{b_cl:,}**")
 
-    st.write(f"**Detailed Expenses (Head-wise) for {sel_m}**")
-    if not m_exp_data.empty:
-        st.dataframe(m_exp_data[['date', 'head', 'description', 'amount', 'mode']].sort_values('date'), use_container_width=True, hide_index=True)
+    st.write(f"---")
+    st.write(f"**Detailed Expense List (Head-wise) for {sel_m} {sel_y}**")
+    all_monthly_exp = pd.concat([c_exp_df, b_exp_df]).sort_values('date_dt')
+    if not all_monthly_exp.empty:
+        st.dataframe(all_monthly_exp[['date', 'head', 'description', 'amount', 'mode']], use_container_width=True, hide_index=True)
     else:
         st.info("No expenses found for this month.")
 
