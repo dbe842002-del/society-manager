@@ -95,9 +95,9 @@ with tab1:
     
     st.subheader(f"Account: {owner['owner']}")
 
-    # Math: Feb 2026 is month 14 since Jan 2025
-    total_months = 14
-    opening = clean_num(owner.get('opening_due', 0))
+   # This will calculate the months from Jan 2025 to today automatically
+today = datetime.now()
+total_months = (today.year - 2025) * 12 + today.month
     
     # Calculate Paid
     paid_col = 'amount_received' if 'amount_received' in df_coll.columns else df_coll.columns[4]
@@ -122,3 +122,4 @@ with tab3:
     st.dataframe(df_coll, use_container_width=True)
     st.subheader("Owners List")
     st.dataframe(df_owners, use_container_width=True)
+
