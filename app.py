@@ -124,7 +124,9 @@ if "Outstanding Balance" in df_display.columns:
     st.dataframe(df_display.style.format(subset=["Outstanding Balance"], formatter="₹{:,}"))
 else:
                  .applymap(lambda x: 'color: red' if x > 6300 else ('color: orange' if x > 0 else 'color: green'), 
-                          subset=['Outstanding Balance']), use_container_width=True, hide_index=True)
+                          df = pd.DataFrame(master_grid)
+st.dataframe(df, use_container_width=True, hide_index=True)
+
 
 # --- TAB 2: FINANCIAL REPORTS ---
 with tabs[1]:
@@ -241,6 +243,7 @@ if st.session_state.get('role') == "admin":
                             st.error(f"❌ Failed: {response.status_code}")
                     except Exception as e:
                         st.error(f"❌ Error: {str(e)}")
+
 
 
 
