@@ -232,16 +232,43 @@ if st.session_state.role == "admin":
         st.dataframe(df_coll[df_coll['flat'] == flat_sel], use_container_width=True)
     
     # Admin Control
+    # Admin Control
     with tabs[4]:
         st.header("⚙️ Admin Panel")
-        if st.button("🔄 Refresh Data"):
-            st.cache_data.clear()
-            st.rerun()
         
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔄 Refresh Data"):
+                st.cache_data.clear()
+                st.rerun()
+
+        with col2:
+            # --- DELETE LAST ENTRY SECTION ---
+            st.subheader("🗑️ Danger Zone")
+            delete_sheet = st.selectbox("Select Sheet to Delete From", ["Collections", "Expenses"])
+            
+            if st.button(f"Delete Last {delete_sheet} Entry"):
+                # You'll need to deploy a Google Apps Script (see step 2)
+                script_url = st.secrets.get("connections", {}).get("gsheets", {}).get("script_url", "")
+                
+                if script_url:
+                    try:
+                        # Sending request to Apps Script to delete the last row
+                        response = requests.post(script_url, json={"sheet": delete_sheet, "action": "delete_last"})
+                        if response.status_code == 200:
+                            st.warning(f"✅ Last entry in {delete_sheet} deleted!")
+                            st.cache_data.clear()
+                            st.rerun()
+                        else:
+                            st.error("Failed to delete. Check Script permissions.")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+                else:
+                    st.info("💡 To enable deletion, please configure the Google Apps Script URL in secrets.")
+
         st.subheader("Raw Data Viewer")
         sheet_sel = st.selectbox("Sheet", ["Owners", "Collections", "Expenses", "Balance"])
         st.dataframe(load_data(sheet_sel), use_container_width=True)
-    
     # Quick Entry
     with st.sidebar:
         st.header("➕ Quick Entry")
@@ -268,5 +295,6 @@ if st.session_state.role == "admin":
 # ================= FOOTER =================
 st.markdown("---")
 st.markdown("*DBE Society Management Portal v2.0 | Built with ❤️ for efficient management*")
+
 
 
