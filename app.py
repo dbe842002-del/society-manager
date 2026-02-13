@@ -117,15 +117,28 @@ with tabs[0]:
     st.markdown(f"""<div class="defaulter-card"><h3 style="margin:0; color:#c53030;">⚠️ Defaulter Alert</h3>
             <p style="margin:5px 0 0 0; font-size:18px;"><b>{defaulters_count}</b> flats with dues exceeding <b>₹6,300</b></p>
             <p style="font-size:14px; color:#718096;">Total Outstanding: ₹{int(total_society_due):,}</p></div>""", unsafe_allow_html=True)
+# SAFE & BEAUTIFUL TABLE DISPLAY
+df_display = pd.DataFrame(master_grid)
 
-    # ✅ FIXED (safe formatting)
-    df_display = pd.DataFrame(master_grid)
-    if "Outstanding Balance" in df_display.columns:
-    st.dataframe(df_display.style.format(subset=["Outstanding Balance"], formatter="₹{:,}"))
-    else:    .applymap(lambda x: 'color: red' if x > 6300 else ('color: orange' if x > 0 else 'color: green'), 
-                          df = pd.DataFrame(master_grid)
-st.dataframe(df, use_container_width=True, hide_index=True)
+# Auto-format money columns
+money_cols = ['Outstanding Balance', 'Total Paid', 'due', 'balance', 'amount']
+format_dict = {}
+for col in money_cols:
+    if col in df_display.columns:
+        format_dict[col] = "₹{:,}"
 
+# Color-code dues (RED>6300, ORANGE>0, GREEN=0)
+def color_dues(val):
+    if val > 6300: return 'color: white; background-color: #f56565'
+    elif val > 0: return 'color: white; background-color: #ed8936'
+    else: return 'color: white; background-color: #48bb78'
+
+if format_dict:
+    styled_df = (df_display.style.format(format_dict)
+                        .applymap(color_dues, subset=['Outstanding Balance']))
+    st.dataframe(styled_df, use_container_width=True, hide_index=True)
+else:
+    st.dataframe(df_display, use_container_width=True, hide_index=True)
 
 # --- TAB 2: FINANCIAL REPORTS ---
 with tabs[1]:
@@ -242,6 +255,7 @@ if st.session_state.get('role') == "admin":
                             st.error(f"❌ Failed: {response.status_code}")
                     except Exception as e:
                         st.error(f"❌ Error: {str(e)}")
+
 
 
 
