@@ -119,11 +119,10 @@ with tabs[0]:
             <p style="font-size:14px; color:#718096;">Total Outstanding: ₹{int(total_society_due):,}</p></div>""", unsafe_allow_html=True)
 
     # ✅ FIXED (safe formatting)
-df_display = pd.DataFrame(master_grid)
-if "Outstanding Balance" in df_display.columns:
+    df_display = pd.DataFrame(master_grid)
+    if "Outstanding Balance" in df_display.columns:
     st.dataframe(df_display.style.format(subset=["Outstanding Balance"], formatter="₹{:,}"))
-else:
-                 .applymap(lambda x: 'color: red' if x > 6300 else ('color: orange' if x > 0 else 'color: green'), 
+    else:    .applymap(lambda x: 'color: red' if x > 6300 else ('color: orange' if x > 0 else 'color: green'), 
                           df = pd.DataFrame(master_grid)
 st.dataframe(df, use_container_width=True, hide_index=True)
 
@@ -243,6 +242,7 @@ if st.session_state.get('role') == "admin":
                             st.error(f"❌ Failed: {response.status_code}")
                     except Exception as e:
                         st.error(f"❌ Error: {str(e)}")
+
 
 
 
