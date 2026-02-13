@@ -4,3 +4,4 @@ st-gsheets-connection
 reportlab
 openpyxl
 xlsxwriter
+requests
