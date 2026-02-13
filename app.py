@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import re
-import io
+import requests  # ← ADD THIS LINE
+from streamlit_gsheets import GSheetsConnection
 
 # ================= 1. THEME & UI STYLING =================
 st.set_page_config(page_title="DBE Society Portal", layout="wide")
@@ -236,3 +236,4 @@ if st.session_state.get('role') == "admin":
                             st.error(f"❌ Failed: {response.status_code}")
                     except Exception as e:
                         st.error(f"❌ Error: {str(e)}")
+
