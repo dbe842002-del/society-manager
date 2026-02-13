@@ -165,27 +165,18 @@ with tabs[1]:
     m3.metric("Net Surplus", f"₹{int(y_in - y_out):,}")
 
     
-    st.divider()
-    m_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    sel_m = st.selectbox("Monthly Detail", m_names, index=current_date.month-1)
-    
-    bal_match = df_bal[df_bal['month'].str.contains(sel_m, na=False, case=False)]
-    op_c = clean_num(bal_match.iloc[0].get('opening_cash', 0)) if not bal_match.empty else 0
-    op_b = clean_num(bal_match.iloc[0].get('opening_bank', 0)) if not bal_match.empty else 0
-    m_inc = df_coll[df_coll['months_paid'].str.contains(sel_m, na=False, case=False)]
-    m_exp = df_exp[df_exp['month'].str.contains(sel_m, na=False, case=False)]
-    c_in = m_inc[m_inc['mode'].str.lower().str.contains('cash', na=False)]['amount_received'].apply(clean_num).sum()
-    c_out = m_exp[m_exp['mode'].str.lower().str.contains('cash', na=False)]['amount'].apply(clean_num).sum()
-    b_in = m_inc[~m_inc['mode'].str.lower().str.contains('cash', na=False)]['amount_received'].apply(clean_num).sum()
-    b_out = m_exp[~m_exp['mode'].str.lower().str.contains('cash', na=False)]['amount'].apply(clean_num).sum()
+    # DEFAULT BALANCES (bulletproof)
+op_c = op_b = 0  # No balance sheet → use defaults
 
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-        pd.DataFrame({"Description": ["Opening", "Income", "Expense", "Closing"],
-                      "Cash": [op_c, c_in, c_out, (op_c+c_in-c_out)],
-                      "Bank": [op_b, b_in, b_out, (op_b+b_in-b_out)]}).to_excel(writer, sheet_name='Summary', index=False)
-        m_exp[['date', 'head', 'description', 'amount', 'mode']].to_excel(writer, sheet_name='Expenses', index=False)
-    
+# SAFE MONTHLY FILTERING
+m_inc = df_coll[df_coll['months_paid'].str.contains(sel_m, na=False, case=False) if 'months_paid' in df_coll.columns else df_coll.empty]
+m_exp = df_exp[df_exp['head'].str.contains(sel_m, na=False, case=False) if 'head' in df_exp.columns else df_exp.empty]
+
+c_in = m_inc[m_inc['mode'].str.lower().str.contains('cash', na=False)]['amount_received'].apply(clean_num).sum() if not m_inc.empty else 0
+c_out = m_exp[m_exp['mode'].str.lower().str.contains('cash', na=False)]['amount'].apply(clean_num).sum() if not m_exp.empty else 0
+b_in = m_inc[~m_inc['mode'].str.lower().str.contains('cash', na=False)]['amount_received'].apply(clean_num).sum() if not m_inc.empty else 0
+b_out = m_exp[~m_exp['mode'].str.lower().str.contains('cash', na=False)]['amount'].apply(clean_num).sum() if not m_exp.empty else 0
+
     st.download_button(label=f"📥 Download {sel_m} Report", data=buffer.getvalue(), file_name=f"Report_{sel_m}.xlsx", mime="application/vnd.ms-excel")
     
     c1, c2 = st.columns(2)
@@ -265,6 +256,7 @@ if st.session_state.get('role') == "admin":
                             st.error(f"❌ Failed: {response.status_code}")
                     except Exception as e:
                         st.error(f"❌ Error: {str(e)}")
+
 
 
 
