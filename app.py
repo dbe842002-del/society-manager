@@ -12,20 +12,39 @@ st.set_page_config(page_title="DBE Society Portal", layout="wide")
 # ================= THEME =================
 st.markdown("""
 <style>
+/* MAIN BACKGROUND */
 .main { background-color: #f8f9fa; }
+
+/* METRIC CARDS */
 div[data-testid="stMetric"] {
     background-color: #ffffff; border: 1px solid #e0e0e0;
     padding: 15px; border-radius: 10px;
     box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
 }
-.defaulter-card { ... }
 
-/* NEW - HIDE SHARE BAR */
-[data-testid="collapsedControl"], 
-.element-container [data-testid="stToolbar"] { display: none !important; }
-#MainMenu, header[role="banner"] { visibility: hidden !important; }
+/* DEFAULTER ALERT CARD */
+.defaulter-card {
+    background-color: #fff5f5; border: 1px solid #feb2b2;
+    padding: 20px; border-radius: 10px; margin-bottom: 20px;
+    text-align: center; border-left: 5px solid #f56565;
+}
+
+/* TAB STYLING */
+.stTabs [data-baseweb="tab-list"] { gap: 10px; }
+.stTabs [data-baseweb="tab"] { 
+    background-color: #f0f2f6; border-radius: 5px; padding: 10px; font-weight: bold;
+}
+.stTabs [aria-selected="true"] { background-color: #007bff !important; color: white !important; }
+
+/* HIDE ALL STREAMLIT UI ELEMENTS */
+section[data-testid="stSidebar"] > div { display: none !important; }
+[data-testid="collapsedControl"], [data-testid="stToolbar"] { display: none !important; }
+#MainMenu, header { visibility: hidden !important; height: 0 !important; }
+footer, .st-emotion-cache-zq5wmm { display: none !important; }
+section[data-testid="stDecoration"] { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
+
 
 
 # ================= DATA LOADER =================
@@ -249,4 +268,5 @@ if st.session_state.role == "admin":
 # ================= FOOTER =================
 st.markdown("---")
 st.markdown("*DBE Society Management Portal v2.0 | Built with ❤️ for efficient management*")
+
 
