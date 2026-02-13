@@ -6,20 +6,25 @@ import re
 # ================= 1. THEME & UI STYLING =================
 st.set_page_config(page_title="DBE Society Portal", layout="wide")
 
-# Custom CSS for a professional look
+# Modern UI Styling
 st.markdown("""
     <style>
-    .main { background-color: #f8f9fa; }
-    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border: 1px solid #eee; }
-    div[data-testid="stExpander"] { background-color: white; border-radius: 10px; }
-    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #007bff; color: white; }
-    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
-    .stTabs [data-baseweb="tab"] { 
-        background-color: #e9ecef; border-radius: 5px 5px 0 0; padding: 10px 20px;
+    .main { background-color: #f0f2f6; }
+    div[data-testid="stMetric"] {
+        background-color: #ffffff;
+        border: 1px solid #e0e0e0;
+        padding: 15px;
+        border-radius: 10px;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
     }
-    .stTabs [aria-selected="true"] { background-color: #007bff !important; color: white !important; }
+    .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
+        font-size: 18px;
+        font-weight: bold;
+    }
+    .status-red { color: #ff4b4b; font-weight: bold; }
+    .status-green { color: #09ab3b; font-weight: bold; }
     </style>
-    """, unsafe_all_caller_id=True)
+    """, unsafe_allow_html=True)
 
 # ================= 2. DATA LOADERS =================
 def get_csv_url(sheet_name):
@@ -53,23 +58,23 @@ if "authenticated" not in st.session_state:
     st.session_state.role = None
 
 if not st.session_state.authenticated:
-    st.title("🏢 DBE Residency Management Portal")
+    st.title("🏢 DBE Residency Portal")
     st.markdown("---")
     c1, c2 = st.columns([1.5, 1])
     with c1:
-        st.image("https://images.unsplash.com/photo-1574362848149-11496d93a7c7?q=80&w=1000", use_container_width=True)
+        st.image("https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=800&q=80", use_container_width=True)
     with c2:
-        st.subheader("🔐 Secure Access")
-        role = st.selectbox("I am a:", ["Viewer (Resident)", "Admin (Management)"])
-        pwd = st.text_input("Enter Password", type="password")
-        if st.button("Enter Portal"):
+        st.subheader("🔐 Member Login")
+        role = st.selectbox("Role", ["Viewer (Resident)", "Admin (Management)"])
+        pwd = st.text_input("Password", type="password")
+        if st.button("Login"):
             if role == "Admin (Management)" and pwd == st.secrets.get("admin_password", "admin123"):
                 st.session_state.authenticated, st.session_state.role = True, "admin"
                 st.rerun()
             elif role == "Viewer (Resident)" and pwd == st.secrets.get("view_password", "society123"):
                 st.session_state.authenticated, st.session_state.role = True, "viewer"
                 st.rerun()
-            else: st.error("❌ Incorrect credentials")
+            else: st.error("Invalid Credentials")
     st.stop()
 
 # ================= 4. LOAD CORE DATA =================
@@ -78,145 +83,137 @@ df_coll = load_data("Collections")
 df_exp = load_data("Expenses")
 df_bal = load_data("Balance")
 
-# Set global constraints
 MONTHLY_MAINT = 2100
 current_date = datetime.now()
+# Months since Jan 2025
 total_months_elapsed = (current_date.year - 2025) * 12 + current_date.month
 
-# ================= 5. APP INTERFACE =================
-st.sidebar.title("🏢 DBE Portal")
-st.sidebar.write(f"Logged in as: **{st.session_state.role.upper()}**")
+# ================= 5. INTERFACE =================
+st.sidebar.title("🏢 DBE Society")
+st.sidebar.info(f"Access: **{st.session_state.role.upper()}**")
 if st.sidebar.button("Log Out"):
     st.session_state.authenticated = False
     st.rerun()
 
-# Defined Tabs
+# Define Tabs
 if st.session_state.role == "admin":
-    t1, t2, t3, t4 = st.tabs(["💰 Maintenance Due", "📋 Master List", "📊 Financial Reports", "⚙️ Database"])
+    tabs = st.tabs(["💰 Maintenance Due", "📋 Master List", "📊 Financial Reports", "⚙️ Admin DB"])
 else:
-    t1, t2, t3 = st.tabs(["💰 Maintenance Due", "📋 Master List", "📊 Financial Reports"])
+    tabs = st.tabs(["💰 Maintenance Due", "📋 Master List", "📊 Financial Reports"])
 
-# ----------------- TAB 1: MAINTENANCE DUE (Individual Search) -----------------
-with t1:
-    st.subheader("🔎 Individual Statement")
+# ----------------- TAB: MAINTENANCE DUE (Individual) -----------------
+with tabs[0]:
+    st.subheader("🔎 My Maintenance Statement")
     
-    # Year Selection Filter (Requirement Met)
-    available_years = sorted(df_coll['date_dt'].dt.year.dropna().unique().astype(int), reverse=True)
-    if not available_years: available_years = [2025, 2026]
-    sel_year_maint = st.selectbox("Select Year to view Statement", available_years, key="y_maint")
+    # Year Selection Filter
+    all_years = sorted(df_coll['date_dt'].dt.year.dropna().unique().astype(int), reverse=True)
+    if not all_years: all_years = [2025, 2026]
+    sel_year = st.selectbox("Select Financial Year", all_years, key="maint_y")
     
-    col_a, col_b = st.columns([1, 2])
-    with col_a:
-        search_flat = st.selectbox("Flat Number", sorted(df_owners['flat'].unique()))
-        o_row = df_owners[df_owners['flat'] == search_flat].iloc[0]
-        
-        # Math
-        f_open = clean_num(o_row.get('opening_due', 0))
-        f_paid_total = df_coll[df_coll['flat'] == search_flat]['amount_received'].apply(clean_num).sum()
-        f_due = (f_open + (total_months_elapsed * MONTHLY_MAINT)) - f_paid_total
-        
-        st.metric("Current Balance", f"₹{int(f_due):,}", delta="Pending" if f_due > 0 else "Cleared", delta_color="inverse")
-        st.write(f"**Owner:** {o_row['owner']}")
+    flat_choice = st.selectbox("Select Flat", sorted(df_owners['flat'].unique()))
+    owner_info = df_owners[df_owners['flat'] == flat_choice].iloc[0]
+    
+    # Global Calculations for the Flat
+    f_open = clean_num(owner_info.get('opening_due', 0))
+    f_paid_all = df_coll[df_coll['flat'] == flat_choice]['amount_received'].apply(clean_num).sum()
+    f_due = (f_open + (total_months_elapsed * MONTHLY_MAINT)) - f_paid_all
+    
+    c1, c2 = st.columns([1, 2])
+    with c1:
+        st.metric("Current Due", f"₹{int(f_due):,}")
+        st.write(f"**Member:** {owner_info['owner']}")
+    with c2:
+        st.write(f"**Payment History ({sel_year})**")
+        yr_pats = df_coll[(df_coll['flat'] == flat_choice) & (df_coll['date_dt'].dt.year == sel_year)]
+        st.dataframe(yr_pats[['date', 'months_paid', 'amount_received', 'mode']], use_container_width=True, hide_index=True)
 
-    with col_b:
-        st.write(f"**Transaction History ({sel_year_maint})**")
-        p_hist = df_coll[(df_coll['flat'] == search_flat) & (df_coll['date_dt'].dt.year == sel_year_maint)]
-        st.dataframe(p_hist[['date', 'months_paid', 'amount_received', 'mode']], use_container_width=True, hide_index=True)
-
-# ----------------- TAB 2: MASTER LIST (The Dues Grid) -----------------
-with t2:
-    st.subheader("📋 Society Dues Master List")
+# ----------------- TAB: MASTER LIST (The Dues Grid) -----------------
+with tabs[1]:
+    st.subheader("📋 Society Master Dues List")
     
-    report_list = []
+    master_data = []
     for _, row in df_owners.iterrows():
-        flat = row['flat']
-        opening = clean_num(row.get('opening_due', 0))
-        paid = df_coll[df_coll['flat'] == flat]['amount_received'].apply(clean_num).sum()
-        accrued = total_months_elapsed * MONTHLY_MAINT
-        due = (opening + accrued) - paid
+        f = row['flat']
+        op = clean_num(row.get('opening_due', 0))
+        pd_amt = df_coll[df_coll['flat'] == f]['amount_received'].apply(clean_num).sum()
+        due = (op + (total_months_elapsed * MONTHLY_MAINT)) - pd_amt
         
-        entry = {"Flat": flat, "Owner": row['owner'], "Current Outstanding": int(due)}
+        item = {"Flat": f, "Owner": row['owner'], "Current Outstanding": int(due)}
         if st.session_state.role == "admin":
-            entry["Total Paid"] = int(paid)
-        report_list.append(entry)
+            item["Total Paid"] = int(pd_amt)
+        master_data.append(item)
     
-    df_master = pd.DataFrame(report_list)
+    df_master = pd.DataFrame(master_data)
     
-    # Styled Table
-    def color_dues(val):
-        color = '#ff4b4b' if val > 0 else '#09ab3b'
-        return f'color: {color}; font-weight: bold'
+    # Styled Display
+    st.dataframe(
+        df_master.style.format(subset=["Current Outstanding"], formatter="₹{:,}")
+        .applymap(lambda x: 'color: red' if x > 0 else 'color: green', subset=['Current Outstanding']),
+        use_container_width=True, hide_index=True
+    )
 
-    st.dataframe(df_master.style.applymap(color_dues, subset=['Current Outstanding']), use_container_width=True, hide_index=True)
-
-# ----------------- TAB 3: FINANCIAL REPORTS (Cash Flow & Yearly) -----------------
-with t3:
-    # 1. Yearly Section
-    st.header("📅 Yearly Summary")
-    # Year Selection (Requirement Met)
-    sel_year_rpt = st.selectbox("Select Year for Financial Report", available_years, key="y_rpt")
+# ----------------- TAB: FINANCIAL REPORTS (Reports List) -----------------
+with tabs[2]:
+    st.header("📊 Financial Reports")
     
-    y_inc = df_coll[df_coll['date_dt'].dt.year == sel_year_rpt]['amount_received'].apply(clean_num).sum()
-    y_exp = df_exp[df_exp['date_dt'].dt.year == sel_year_rpt]['amount'].apply(clean_num).sum()
+    # 1. Yearly Report
+    st.subheader("📅 Yearly Summary")
+    rpt_year = st.selectbox("Select Year", all_years, key="rpt_y")
+    
+    y_in = df_coll[df_coll['date_dt'].dt.year == rpt_year]['amount_received'].apply(clean_num).sum()
+    y_out = df_exp[df_exp['date_dt'].dt.year == rpt_year]['amount'].apply(clean_num).sum()
     
     m1, m2, m3 = st.columns(3)
-    m1.metric(f"Total Income ({sel_year_rpt})", f"₹{int(y_inc):,}")
-    m2.metric(f"Total Expense ({sel_year_rpt})", f"₹{int(y_exp):,}")
-    m3.metric("Net Surplus", f"₹{int(y_inc - y_exp):,}")
-
+    m1.metric("Yearly Income", f"₹{int(y_in):,}")
+    m2.metric("Yearly Expense", f"₹{int(y_out):,}")
+    m3.metric("Balance", f"₹{int(y_in - y_out):,}")
+    
     st.divider()
-
-    # 2. Monthly Section (Integration with Balance Sheet)
-    st.header("🗓️ Monthly Cash Flow")
-    m_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    sel_m = st.selectbox("View Monthly Details", m_names, index=current_date.month-1)
-
-    # Balance Sheet Integration
+    
+    # 2. Monthly Report with Opening/Closing from Balance Sheet
+    st.subheader("🗓️ Monthly Cash Flow")
+    m_list = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    sel_m = st.selectbox("Select Month", m_names if 'm_names' in locals() else m_list, index=current_date.month-1)
+    
+    # Lookup Opening from 'Balance' Sheet
     bal_match = df_bal[df_bal['month'].str.contains(sel_m, na=False, case=False)]
-    if not bal_match.empty:
-        op_cash = clean_num(bal_match.iloc[0].get('opening_cash', 0))
-        op_bank = clean_num(bal_match.iloc[0].get('opening_bank', 0))
-    else:
-        op_cash, op_bank = 0, 0
-        st.caption(f"ℹ️ No opening balances found in 'Balance' tab for {sel_m}")
-
-    # Month filtering
+    op_c = clean_num(bal_match.iloc[0].get('opening_cash', 0)) if not bal_match.empty else 0
+    op_b = clean_num(bal_match.iloc[0].get('opening_bank', 0)) if not bal_match.empty else 0
+    
+    # Current Month Collections & Expenses
     m_inc = df_coll[df_coll['months_paid'].str.contains(sel_m, na=False, case=False)]
     m_exp = df_exp[df_exp['month'].str.contains(sel_m, na=False, case=False)]
-
-    # Cash vs Bank Logic
+    
+    # Split Cash/Bank
     c_in = m_inc[m_inc['mode'].str.lower().str.contains('cash', na=False)]['amount_received'].apply(clean_num).sum()
     c_out = m_exp[m_exp['mode'].str.lower().str.contains('cash', na=False)]['amount'].apply(clean_num).sum()
     b_in = m_inc[~m_inc['mode'].str.lower().str.contains('cash', na=False)]['amount_received'].apply(clean_num).sum()
     b_out = m_exp[~m_exp['mode'].str.lower().str.contains('cash', na=False)]['amount'].apply(clean_num).sum()
 
-    col_cash, col_bank = st.columns(2)
-    with col_cash:
-        st.subheader("💵 Cash Account")
-        st.write(f"Opening: ₹{int(op_cash):,}")
-        st.write(f"Collections: ₹{int(c_in):,}")
-        st.write(f"Expenses: ₹{int(c_out):,}")
-        st.markdown(f"**Closing Cash: ₹{int(op_cash + c_in - c_out):,}**")
+    col_c, col_b = st.columns(2)
+    with col_c:
+        st.info("💵 Cash Flow")
+        st.write(f"Opening: ₹{int(op_c):,}")
+        st.write(f"In: ₹{int(c_in):,}")
+        st.write(f"Out: ₹{int(c_out):,}")
+        st.markdown(f"**Closing Cash: ₹{int(op_c + c_in - c_out):,}**")
 
-    with col_bank:
-        st.subheader("🏦 Bank Account")
-        st.write(f"Opening: ₹{int(op_bank):,}")
-        st.write(f"Collections: ₹{int(b_in):,}")
-        st.write(f"Expenses: ₹{int(b_out):,}")
-        st.markdown(f"**Closing Bank: ₹{int(op_bank + b_in - b_out):,}**")
+    with col_b:
+        st.success("🏦 Bank Flow")
+        st.write(f"Opening: ₹{int(op_b):,}")
+        st.write(f"In: ₹{int(b_in):,}")
+        st.write(f"Out: ₹{int(b_out):,}")
+        st.markdown(f"**Closing Bank: ₹{int(op_b + b_in - b_out):,}**")
 
-    st.write("### 📝 Head-wise Expenses")
-    if not m_exp.empty:
-        st.dataframe(m_exp[['date', 'head', 'description', 'amount', 'mode']], use_container_width=True, hide_index=True)
-    else:
-        st.info("No expense records for this month.")
+    st.write("### 📝 Detailed Monthly Expenses")
+    st.dataframe(m_exp[['date', 'head', 'description', 'amount', 'mode']], use_container_width=True, hide_index=True)
 
-# ----------------- TAB 4: ADMIN ONLY -----------------
+# ----------------- TAB: ADMIN DB -----------------
 if st.session_state.role == "admin":
-    with t4:
+    with tabs[3]:
         st.subheader("Raw Data Inspection")
-        tab_sel = st.radio("Select Sheet", ["Balance", "Owners", "Expenses", "Collections"], horizontal=True)
-        if tab_sel == "Balance": st.dataframe(df_bal)
-        elif tab_sel == "Owners": st.dataframe(df_owners)
-        elif tab_sel == "Expenses": st.dataframe(df_exp)
-        else: st.dataframe(df_coll)
+        db_choice = st.radio("Select Sheet", ["Owners", "Collections", "Expenses", "Balance"], horizontal=True)
+        if db_choice == "Owners": st.dataframe(df_owners)
+        elif db_choice == "Collections": st.dataframe(df_coll)
+        elif db_choice == "Expenses": st.dataframe(df_exp)
+        elif db_choice == "Balance": st.dataframe(df_bal)
