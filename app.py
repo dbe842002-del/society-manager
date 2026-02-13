@@ -4,9 +4,6 @@ from datetime import datetime
 import requests
 from streamlit_gsheets import GSheetsConnection
 
-# Your existing config...
-MONTHLY_MAINT = 2100
-
 
 # ================= 1. THEME & UI STYLING =================
 st.set_page_config(page_title="DBE Society Portal", layout="wide")
@@ -240,5 +237,6 @@ if st.session_state.get('role') == "admin":
                             st.error(f"❌ Failed: {response.status_code}")
                     except Exception as e:
                         st.error(f"❌ Error: {str(e)}")
+
 
 
