@@ -1,7 +1,4 @@
 streamlit
 pandas
-st-gsheets-connection
-reportlab
-openpyxl
-xlsxwriter
 requests
+streamlit-gsheets
