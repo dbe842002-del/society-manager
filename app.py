@@ -184,22 +184,55 @@ if st.session_state.role == "admin":
         db_choice = st.radio("Inspect Raw Data", ["Owners", "Collections", "Expenses", "Balance"], horizontal=True)
         st.dataframe(load_data(db_choice), use_container_width=True)
 
-# === TAB 5: QUICK ENTRY (Admin Only) ===
+# ----------------- TAB 5: ADD ENTRY (Admin Only) -----------------
 if st.session_state.get('role') == "admin":
-    # Add tab dynamically or use tabs[4]
     tab5 = st.tabs(["Maintenance", "Owners", "Expenses", "Collections", "📝 Quick Entry"])[-1]
     
     with tab5:
-        st.header("📝 Quick Data Entry")
+        st.subheader("📝 Quick Data Entry")
         
-        entry_type = st.radio("Record what?", ["💰 Collection", "💸 Expense"], horizontal=True, key="entry_type")
+        entry_type = st.radio("What are you recording?", ["Collection (Income)", "Expense (Spending)"], horizontal=True)
         
-        with st.form("quick_entry", clear_on_submit=True):
-            date_val = st.date_input("📅 Date", datetime.now())
+        with st.form("entry_form", clear_on_submit=True):
+            date_val = st.date_input("Date", datetime.now())
             date_str = date_val.strftime("%d/%m/%Y")
             
-            if entry_type == "💰 Collection":
-                # Collection form
-                f_no = st.selectbox("🏠 Flat", sorted(df_owners['flat'].unique()))
-                owner = df_owners[df_owners['flat'] == f_no]['owner'].iloc[0]
-                months_paid
+            if entry_type == "Collection (Income)":
+                f_no = st.selectbox("Flat Number", sorted(df_owners['flat'].dropna().unique()))
+                owner_name = df_owners[df_owners['flat'] == f_no]['owner'].iloc[0] if not df_owners.empty else "N/A"
+                months_paid = st.text_input("Months Paid (e.g., Jan-Feb 25)")
+                amount = st.number_input("Amount Received (₹)", min_value=0.0, step=100.0)
+                mode = st.selectbox("Payment Mode", ["UPI", "Bank Transfer", "Cash", "Cheque"])
+                
+                payload = [date_str, f_no, months_paid, amount, mode]
+                target_sheet = "Collections"
+                
+            else:  # Expense
+                head = st.selectbox("Expense Head", ["Electricity", "Water", "Salary", "Repair", "Misc"])
+                desc = st.text_input("Description/Vendor")
+                amount = st.number_input("Amount Paid (₹)", min_value=0.0, step=10.0)
+                mode = st.selectbox("Payment Mode", ["Cash", "Bank Transfer"])
+                month_tag = date_val.strftime("%b")  # Auto-tag month
+                
+                payload = [date_str, month_tag, head, desc, amount, mode]
+                target_sheet = "Expenses"
+
+            submit = st.form_submit_button("🚀 Save to Google Sheet")
+            
+            if submit:
+                if amount <= 0:
+                    st.error("❌ Please enter a valid amount.")
+                else:
+                    try:
+                        script_url = st.secrets["connections"]["gsheets"]["script_url"]
+                        response = requests.post(f"{script_url}?sheet={target_sheet}", json=payload)
+                        
+                        if response.status_code == 200:
+                            st.success(f"✅ Data saved to {target_sheet}!")
+                            st.balloons()
+                            st.cache_data.clear()
+                            st.rerun()
+                        else:
+                            st.error(f"❌ Failed: {response.status_code}")
+                    except Exception as e:
+                        st.error(f"❌ Error: {str(e)}")
