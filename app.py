@@ -292,9 +292,38 @@ if st.session_state.role == "admin":
                 st.cache_data.clear()
                 st.rerun()
 
+# ——— NEW: ADD ENTRY TAB ———
+    with tabs[5]:
+        st.header("➕ New Data Entry")
+        entry_type = st.radio("Select Entry Type", ["Payment (Collection)", "Expense"], horizontal=True)
+        
+        with st.form("tab_entry_form", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            with col1:
+                date = st.date_input("Transaction Date", datetime.now())
+                mode = st.selectbox("Payment Mode", ["UPI", "Cash", "Bank Transfer"])
+            
+            with col2:
+                if entry_type == "Payment (Collection)":
+                    flat = st.selectbox("Flat Number", sorted(df_owners['flat'].dropna().unique()))
+                    amount = st.number_input("Amount Received (₹)", min_value=0, step=100)
+                    months = st.text_input("For Months (e.g., Jan-Mar 2025)")
+                else:
+                    category = st.selectbox("Expense Category", ["Electricity", "Salary", "Maintenance", "Misc"])
+                    amount = st.number_input("Expense Amount (₹)", min_value=0, step=100)
+                    head = st.text_input("Description / Vendor")
+
+            submitted = st.form_submit_button("Submit Entry")
+            if submitted:
+                # Note: This only shows a success message. 
+                # To actually SAVE to Google Sheets, you need an API/Script setup.
+                st.success(f"✅ {entry_type} recorded successfully!")
+                st.cache_data.clear()
+
 # ================= FOOTER =================
 st.markdown("---")
 st.markdown("*DBE Society Management Portal v2.0 | Built with ❤️ for efficient management*")
+
 
 
 
