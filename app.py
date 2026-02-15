@@ -233,16 +233,75 @@ if st.session_state.role == "admin":
             st.rerun()
         st.dataframe(load_data(st.selectbox("View Sheet", ["Owners", "Collections", "Expenses"])))
 
-    with tabs[4]:
-        st.header("➕ Add Entry")
-        with st.form("entry_f"):
-            t = st.radio("Type", ["Income", "Expense"])
-            a = st.number_input("Amount", min_value=0)
-            if st.form_submit_button("Submit"):
-                st.info("Permanent save requires API connection.")
+    from streamlit_gsheets import GSheetsConnection
 
+# 1. Initialize Connection
+conn = st.connection("gsheets", type=GSheetsConnection)
+
+with tabs[4]:
+    st.header("➕ Add New Entry")
+    
+    # Select which sheet to add data to
+    sheet_target = st.radio("Record Type", ["Collections", "Expenses"], horizontal=True)
+    
+    with st.form("entry_form", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        
+        # Common Fields
+        entry_date = col1.date_input("Date", datetime.now())
+        amount = col2.number_input("Amount (₹)", min_value=0, step=100)
+        mode = col1.selectbox("Payment Mode", ["Bank/UPI", "Cash", "Cheque"])
+        
+        # Sheet Specific Fields
+        if sheet_target == "Collections":
+            flat_list = sorted(df_owners['flat'].dropna().unique())
+            flat_no = col2.selectbox("Flat No", flat_list)
+            note = st.text_input("Months Paid (e.g., Jan-Mar 2025)")
+            
+            # Prepare data row for Collections sheet
+            new_row = {
+                "date": entry_date.strftime("%d/%m/%Y"),
+                "flat": flat_no,
+                "amount_received": amount,
+                "mode": mode,
+                "months_paid": note
+            }
+        else:
+            expense_head = col2.text_input("Expense Head (e.g., Cleaning, Electricity)")
+            note = st.text_input("Remarks")
+            
+            # Prepare data row for Expenses sheet
+            new_row = {
+                "date": entry_date.strftime("%d/%m/%Y"),
+                "head": expense_head,
+                "amount": amount,
+                "mode": mode,
+                "remarks": note
+            }
+
+        submitted = st.form_submit_button("💾 Save Entry")
+        
+        if submitted:
+            if amount <= 0:
+                st.error("Please enter a valid amount.")
+            else:
+                try:
+                    # FETCH existing data
+                    existing_data = conn.read(worksheet=sheet_target, ttl=0)
+                    
+                    # APPEND new row
+                    updated_df = pd.concat([existing_data, pd.DataFrame([new_row])], ignore_index=True)
+                    
+                    # WRITE back to Google Sheets
+                    conn.update(worksheet=sheet_target, data=updated_df)
+                    
+                    st.success(f"✅ Successfully added to {sheet_target}!")
+                    st.cache_data.clear() # Clear cache to show new data immediately
+                except Exception as e:
+                    st.error(f"Error connecting to Google Sheets: {e}")
 st.markdown("---")
 st.caption("DBE Society Management Portal v2.1")
+
 
 
 
