@@ -116,7 +116,7 @@ current_date = datetime.now()
 total_months = (current_date.year - 2025) * 12 + current_date.month
 
 # ================= TABS =================
-tab_labels = ["📋 Master Dashboard","💰 Dues Report", "📊 Financials"]
+tab_labels = ["📋 Master Dashboard","👤 Flat Lookup", "📊 Financials"]
 if st.session_state.role == "admin":
     tab_labels += ["💰 Dues Report", "👤 Flat Lookup", "⚙️ Admin", "➕ Add Entry"]
 tabs = st.tabs(tab_labels)
@@ -173,29 +173,22 @@ with tabs[0]:
         st.dataframe(df_display, use_container_width=True, hide_index=True)
 
 # ================= TAB 2: DUES REPORT =================
-with tabs[1]:
-    st.header("💰 Maintenance Dues")
-    flat_choice = st.selectbox("Select Flat", sorted(df_owners['flat'].dropna().unique()))
-    
-    owner_row = df_owners[df_owners['flat'] == flat_choice].iloc[0] if not df_owners.empty else {}
-    paid_total = df_coll[df_coll['flat'] == flat_choice]['amount_received'].apply(clean_num).sum()
-    opening_due = clean_num(owner_row.get('opening_due', 0))
-    expected = total_months * MONTHLY_MAINT
-    total_due = max(0, opening_due + expected - paid_total)
-    
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total Due", f"₹{int(total_due):,}", f"₹{int(paid_total):,} paid")
-    col2.metric("Opening Due", f"₹{int(opening_due):,}")
-    col3.metric("Expected", f"₹{int(expected):,}")
-    
-    with st.expander("📋 Payment History"):
-        payments = df_coll[df_coll['flat'] == flat_choice][['date', 'months_paid', 'amount_received', 'mode']]
-        if not payments.empty:
-            st.dataframe(payments, use_container_width=True)
-        else:
-            st.info("No payments recorded")
+if st.session_state.role == "admin":
+    # Tab 3: Flat Lookup
+    with tabs[3]:
+        st.header("👤 Flat Details")
+        flat_sel = st.selectbox("Select Flat for Detailed View", sorted(df_owners['flat'].dropna().unique()))
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("Owner Info")
+            st.write(df_owners[df_owners['flat'] == flat_sel])
+        with col2:
+            st.subheader("Payment History")
+            st.write(df_coll[df_coll['flat'] == flat_sel])
+
 
 # ================= TAB 3: FINANCIALS =================
+
 with tabs[2]:
     st.header("📊 Financial Summary")
     
@@ -223,18 +216,27 @@ with tabs[2]:
     with col2: st.dataframe(m_expense[['date', 'head', 'amount', 'mode']], use_container_width=True)
 
 # ================= ADMIN TABS =================
-if st.session_state.role == "admin":
-    # Tab 3: Flat Lookup
-    with tabs[3]:
-        st.header("👤 Flat Details")
-        flat_sel = st.selectbox("Select Flat for Detailed View", sorted(df_owners['flat'].dropna().unique()))
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("Owner Info")
-            st.write(df_owners[df_owners['flat'] == flat_sel])
-        with col2:
-            st.subheader("Payment History")
-            st.write(df_coll[df_coll['flat'] == flat_sel])
+with tabs[1]:
+    st.header("💰 Maintenance Dues")
+    flat_choice = st.selectbox("Select Flat", sorted(df_owners['flat'].dropna().unique()))
+    
+    owner_row = df_owners[df_owners['flat'] == flat_choice].iloc[0] if not df_owners.empty else {}
+    paid_total = df_coll[df_coll['flat'] == flat_choice]['amount_received'].apply(clean_num).sum()
+    opening_due = clean_num(owner_row.get('opening_due', 0))
+    expected = total_months * MONTHLY_MAINT
+    total_due = max(0, opening_due + expected - paid_total)
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Due", f"₹{int(total_due):,}", f"₹{int(paid_total):,} paid")
+    col2.metric("Opening Due", f"₹{int(opening_due):,}")
+    col3.metric("Expected", f"₹{int(expected):,}")
+    
+    with st.expander("📋 Payment History"):
+        payments = df_coll[df_coll['flat'] == flat_choice][['date', 'months_paid', 'amount_received', 'mode']]
+        if not payments.empty:
+            st.dataframe(payments, use_container_width=True)
+        else:
+            st.info("No payments recorded")
     
     # Tab 4: Admin Control & Delete
     with tabs[4]:
@@ -316,6 +318,7 @@ if st.session_state.role == "admin":
 # ================= FOOTER =================
 st.markdown("---")
 st.markdown("*DBE Society Management Portal v2.0 | Built with ❤️ for efficient management*")
+
 
 
 
