@@ -144,21 +144,18 @@ with tabs[1]:
 with tabs[2]:
     st.header("📊 Financial Reports")
     
-    # 0. PRE-PROCESS DATA (Convert dates and clean numbers)
-    # Ensure Collections and Expenses have proper datetime objects
+    # 0. PRE-PROCESS DATA
     df_coll['date_dt'] = pd.to_datetime(df_coll['date'], dayfirst=True, errors='coerce')
     df_exp['date_dt'] = pd.to_datetime(df_exp['date'], dayfirst=True, errors='coerce')
     
     df_coll['amount_val'] = df_coll['amount_received'].apply(clean_num)
     df_exp['amount_val'] = df_exp['amount'].apply(clean_num)
 
-    # 1. LIQUIDITY SUMMARY (Cash & Bank Wise)
+    # 1. LIQUIDITY SUMMARY
     st.subheader("🏦 Cash & Bank Balance")
     
     def get_totals(df, col):
-        # We handle case-insensitive matching for Mode
         cash = df[df['mode'].str.contains('cash', case=False, na=False)][col].sum()
-        # Bank includes 'Bank Transfer', 'UPI', 'NEFT', 'Online'
         bank = df[df['mode'].str.contains('bank|upi|transfer|online|neft', case=False, na=False)][col].sum()
         return cash, bank
 
@@ -166,8 +163,8 @@ with tabs[2]:
     c_out, b_out = get_totals(df_exp, 'amount_val')
 
     l1, l2, l3 = st.columns(3)
-    l1.metric("💵 Cash on Hand", f"₹{int(c_in - c_out):,}", f"In: ₹{int(c_in):,}")
-    l2.metric("🏦 Bank Balance", f"₹{int(b_in - b_out):,}", f"In: ₹{int(b_in):,}")
+    l1.metric("💵 Cash on Hand", f"₹{int(c_in - c_out):,}")
+    l2.metric("🏦 Bank Balance", f"₹{int(b_in - b_out):,}")
     l3.metric("💰 Total Liquidity", f"₹{int((c_in + b_in) - (c_out + b_out)):,}")
 
     st.divider()
@@ -175,58 +172,59 @@ with tabs[2]:
     # 2. MONTH & YEAR WISE EXPENSE REPORT
     st.subheader("📅 Monthly Expense Drill-down")
     
-    # Create Year and Month strings for filtering
-    df_exp['year_str'] = df_exp['date_dt'].dt.strftime('%Y')
+    df_exp['year_int'] = df_exp['date_dt'].dt.year
     df_exp['month_str'] = df_exp['date_dt'].dt.strftime('%B')
     
-    # Robust Year Selection
-    available_years = sorted(df_exp['year_str'].dropna().unique(), reverse=True)
-    if not available_years:
-        available_years = [str(datetime.now().year)]
-        
+    # --- FIXED YEAR LOGIC ---
+    # We combine years from data with [2024, 2025, 2026] to ensure they always exist
+    data_years = df_exp['year_int'].dropna().unique().astype(int).tolist()
+    default_years = [2024, 2025, 2026]
+    combined_years = sorted(list(set(data_years + default_years)), reverse=True)
+    
     ex_col1, ex_col2 = st.columns(2)
     with ex_col1:
-        sel_year_ex = st.selectbox("Select Year", available_years, key="exp_yr")
+        sel_year_ex = st.selectbox("Select Year", combined_years, key="exp_yr")
     with ex_col2:
-        available_months = df_exp[df_exp['year_str'] == sel_year_ex]['month_str'].unique()
-        sel_month_ex = st.selectbox("Select Month", available_months if len(available_months) > 0 else ["No Data"])
+        # Get months specifically for the selected year
+        available_months = df_exp[df_exp['year_int'] == sel_year_ex]['month_str'].unique()
+        # If no data for that year yet, show all months or a placeholder
+        month_list = list(available_months) if len(available_months) > 0 else ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+        sel_month_ex = st.selectbox("Select Month", month_list)
 
-    month_data = df_exp[(df_exp['year_str'] == sel_year_ex) & (df_exp['month_str'] == sel_month_ex)]
+    month_data = df_exp[(df_exp['year_int'] == sel_year_ex) & (df_exp['month_str'] == sel_month_ex)]
     
     if not month_data.empty:
-        st.write(f"**Detailed Expenses for {sel_month_ex} {sel_year_ex}**")
         st.dataframe(month_data[['date', 'head', 'amount', 'mode']], use_container_width=True, hide_index=True)
-        st.info(f"Total Monthly Expenditure: ₹{int(month_data['amount_val'].sum()):,}")
+        st.info(f"Total for {sel_month_ex} {sel_year_ex}: ₹{int(month_data['amount_val'].sum()):,}")
     else:
-        st.warning("No expense data found for this period.")
+        st.warning(f"No expense data recorded for {sel_month_ex} {sel_year_ex}")
 
     st.divider()
 
-    # 3. YEARLY FINANCIAL REPORT (P&L Style)
+    # 3. YEARLY FINANCIAL REPORT
     st.subheader("📈 Annual Financial Statement")
     
-    # Combine years from both collections and expenses for a full list
-    all_years = sorted(pd.concat([df_coll['date_dt'], df_exp['date_dt']]).dt.year.dropna().unique().astype(int), reverse=True)
-    if not all_years: all_years = [datetime.now().year]
+    # Apply same fixed year logic for the Annual Report
+    data_years_total = pd.concat([df_coll['date_dt'], df_exp['date_dt']]).dt.year.dropna().unique().astype(int).tolist()
+    combined_years_total = sorted(list(set(data_years_total + default_years)), reverse=True)
     
-    final_year_sel = st.selectbox("Financial Year Report", all_years)
+    final_year_sel = st.selectbox("Financial Year Report", combined_years_total)
     
     y_inc = df_coll[df_coll['date_dt'].dt.year == final_year_sel]['amount_val'].sum()
     y_exp = df_exp[df_exp['date_dt'].dt.year == final_year_sel]['amount_val'].sum()
     
     y1, y2, y3 = st.columns(3)
-    y1.metric("Annual Income", f"₹{int(y_inc):,}")
-    y2.metric("Annual Expenses", f"₹{int(y_exp):,}")
+    y1.metric(f"Total Income ({final_year_sel})", f"₹{int(y_inc):,}")
+    y2.metric(f"Total Expenses ({final_year_sel})", f"₹{int(y_exp):,}")
     y3.metric("Yearly Surplus", f"₹{int(y_inc - y_exp):,}")
 
-    # Category breakdown for the year
-    st.write(f"**Expense Breakdown by Category ({final_year_sel})**")
-    category_report = df_exp[df_exp['date_dt'].dt.year == final_year_sel].groupby('head')['amount_val'].sum().reset_index()
-    category_report.columns = ['Expense Head', 'Total Spent']
-    if not category_report.empty:
-        st.table(category_report.sort_values(by='Total Spent', ascending=False).style.format({"Total Spent": "₹{:,}"}))
-    else:
-        st.write("No yearly data to display.")
+    # Expense breakdown
+    yearly_exp_data = df_exp[df_exp['year_int'] == final_year_sel]
+    if not yearly_exp_data.empty:
+        st.write(f"**Expense Breakdown ({final_year_sel})**")
+        cat_report = yearly_exp_data.groupby('head')['amount_val'].sum().reset_index()
+        cat_report.columns = ['Category', 'Total Spent']
+        st.table(cat_report.sort_values(by='Total Spent', ascending=False).style.format({"Total Spent": "₹{:,}"}))
         
 # ================= ADMIN TABS =================
 if st.session_state.role == "admin":
@@ -247,5 +245,6 @@ if st.session_state.role == "admin":
 
 st.markdown("---")
 st.caption("DBE Society Management Portal v2.1")
+
 
 
