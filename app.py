@@ -52,6 +52,17 @@ def clean_num(val):
     try: return float(s)
     except: return 0.0
 
+def clean_column(df, col_name):
+    if col_name in df.columns:
+        df[col_name] = (
+            df[col_name]
+            .astype(str)
+            .str.replace(r'[₹,\s]', '', regex=True)
+            .replace(['nan', 'None', ''], '0')
+            .astype(float)
+        )
+    return df
+
 # ================= AUTH =================
 if "authenticated" not in st.session_state:
     st.session_state.authenticated, st.session_state.role = False, None
@@ -245,6 +256,7 @@ if st.session_state.role == "admin":
 
 st.markdown("---")
 st.caption("DBE Society Management Portal v2.1")
+
 
 
 
