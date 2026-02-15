@@ -182,7 +182,7 @@ with tabs[2]:
 
     # 2. MONTH & YEAR WISE EXPENSE REPORT
     # Replace the Monthly Expense Drill-down section with this:
-month_data = df_exp[(df_exp['year_int'] == sel_year_ex) & (df_exp['month_str'] == sel_month_ex)]
+    month_data = df_exp[(df_exp['year_int'] == sel_year_ex) & (df_exp['month_str'] == sel_month_ex)]
 
 if not month_data.empty:
     # Formatting for the table
@@ -264,6 +264,7 @@ if st.session_state.role == "admin":
 
 st.markdown("---")
 st.caption("DBE Society Management Portal v2.1")
+
 
 
 
