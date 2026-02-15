@@ -104,7 +104,7 @@ with tabs[0]:
         master_grid.append({"Flat": f, "Owner": row.get('owner', 'N/A'), "Due": int(due)})
 
     c1, c2 = st.columns([2, 1])
-    c1.markdown(f'<div class="defaulter-card"><h3>Defaulters Alert</h3><h1>{defaulters}</h1><p>Due > ₹6,300</p></div>', unsafe_allow_html=True)
+    c1.markdown(f'<div class="defaulter-card"><h3>Overdue Alert</h3><h1>{defaulters}</h1><p>Due > ₹6,300</p></div>', unsafe_allow_html=True)
     c2.metric("Total Flats", len(df_owners))
     c2.metric("Total Owed", f"₹{int(total_due_val):,}")
 
@@ -245,6 +245,7 @@ if st.session_state.role == "admin":
 
 st.markdown("---")
 st.caption("DBE Society Management Portal v2.1")
+
 
 
 
