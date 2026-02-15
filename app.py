@@ -244,6 +244,7 @@ with tabs[4]:
     with st.form("entry_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
     if st.button("Generate WhatsApp Receipt"):
+    # Everything below this line MUST be indented 
     receipt = f"""
     *DBE Residency Receipt*
     -----------------------
@@ -308,6 +309,7 @@ with tabs[4]:
                     st.error(f"Error connecting to Google Sheets: {e}")
 st.markdown("---")
 st.caption("DBE Society Management Portal v2.1")
+
 
 
 
