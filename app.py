@@ -116,7 +116,7 @@ current_date = datetime.now()
 total_months = (current_date.year - 2025) * 12 + current_date.month
 
 # ================= TABS =================
-tab_labels = ["📋 Master Dashboard", "👤 Flat Lookup", "📊 Financials"]
+tab_labels = ["📋 Master Dashboard","💰 Dues Report", "📊 Financials"]
 if st.session_state.role == "admin":
     tab_labels += ["💰 Dues Report", "👤 Flat Lookup", "⚙️ Admin", "➕ Add Entry"]
 tabs = st.tabs(tab_labels)
@@ -316,6 +316,7 @@ if st.session_state.role == "admin":
 # ================= FOOTER =================
 st.markdown("---")
 st.markdown("*DBE Society Management Portal v2.0 | Built with ❤️ for efficient management*")
+
 
 
 
