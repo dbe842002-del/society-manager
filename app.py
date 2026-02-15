@@ -133,6 +133,7 @@ with tabs[0]:
         st.dataframe(styled_master, use_container_width=True, hide_index=True)
 
 # ================= TAB 1: LOOKUP =================
+# ================= TAB 1: LOOKUP =================
 with tabs[1]:
     st.header("🔍 Flat Status Lookup")
     flat_list = sorted(df_owners['flat'].dropna().unique())
@@ -147,11 +148,22 @@ with tabs[1]:
     m2.metric("Owner", str(owner_row.get('owner', 'N/A')))
     m3.metric("Total Paid", f"₹{int(paid):,}")
     
+    # --- ADDED RECEIPT GENERATOR ---
+    if st.button("Generate WhatsApp Receipt"):
+        receipt = f"""
+*DBE Residency Receipt*
+-----------------------
+*Flat:* {sel}
+*Owner:* {owner_row.get('owner')}
+*Amount Paid:* ₹{int(paid):,}
+*Current Balance:* ₹{int(bal):,}
+*Date:* {datetime.now().strftime('%d-%m-%Y')}
+"""
+        st.code(receipt, language="markdown")
+
     st.subheader("📜 Payment History")
     hist = df_coll[df_coll['flat'] == sel][['date', 'months_paid', 'amount_received', 'mode']]
     st.dataframe(hist.sort_values('date', ascending=False) if not hist.empty else pd.DataFrame(), use_container_width=True, hide_index=True)
-
-# ================= TAB 2: FINANCIALS =================
 # ================= TAB 2: FINANCIALS =================
 with tabs[2]:
     st.header("📊 Financial Reports")
@@ -309,6 +321,7 @@ with tabs[4]:
                     st.error(f"Error connecting to Google Sheets: {e}")
 st.markdown("---")
 st.caption("DBE Society Management Portal v2.1")
+
 
 
 
