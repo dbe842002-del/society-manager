@@ -246,7 +246,17 @@ with tabs[4]:
     
     with st.form("entry_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
-        
+    if st.button("Generate WhatsApp Receipt"):
+    receipt = f"""
+    *DBE Residency Receipt*
+    -----------------------
+    *Flat:* {sel}
+    *Owner:* {owner_row.get('owner')}
+    *Amount Paid:* ₹{int(paid):,}
+    *Current Balance:* ₹{int(bal):,}
+    *Date:* {datetime.now().strftime('%d-%m-%Y')}
+    """
+    st.code(receipt, language="markdown")
         # Common Fields
         entry_date = col1.date_input("Date", datetime.now())
         amount = col2.number_input("Amount (₹)", min_value=0, step=100)
@@ -301,6 +311,7 @@ with tabs[4]:
                     st.error(f"Error connecting to Google Sheets: {e}")
 st.markdown("---")
 st.caption("DBE Society Management Portal v2.1")
+
 
 
 
