@@ -181,10 +181,18 @@ with tabs[2]:
     st.divider()
 
     # 2. MONTH & YEAR WISE EXPENSE REPORT
-    st.subheader("📅 Monthly Expense Drill-down")
+    # Replace the Monthly Expense Drill-down section with this:
+month_data = df_exp[(df_exp['year_int'] == sel_year_ex) & (df_exp['month_str'] == sel_month_ex)]
+
+if not month_data.empty:
+    # Formatting for the table
+    display_df = month_data[['date', 'head', 'amount', 'mode']].copy()
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
     
-    df_exp['year_int'] = df_exp['date_dt'].dt.year
-    df_exp['month_str'] = df_exp['date_dt'].dt.strftime('%B')
+    total_m = month_data['amount_val'].sum()
+    st.success(f"**Total Expenses for {sel_month_ex}:** ₹{int(total_m):,}")
+else:
+    st.info(f"📅 No records found for {sel_month_ex} {sel_year_ex}.")
     
     # --- FIXED YEAR LOGIC ---
     # We combine years from data with [2024, 2025, 2026] to ensure they always exist
@@ -256,6 +264,7 @@ if st.session_state.role == "admin":
 
 st.markdown("---")
 st.caption("DBE Society Management Portal v2.1")
+
 
 
 
