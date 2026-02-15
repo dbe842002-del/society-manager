@@ -142,14 +142,77 @@ with tabs[1]:
 
 # ================= TAB 2: FINANCIALS =================
 with tabs[2]:
-    st.header("📊 Financial Summary")
-    inc = df_coll['amount_received'].apply(clean_num).sum()
-    exp = df_exp['amount'].apply(clean_num).sum()
-    f1, f2, f3 = st.columns(3)
-    f1.success(f"Total Income: ₹{int(inc):,}")
-    f2.error(f"Total Expense: ₹{int(exp):,}")
-    f3.metric("Net Balance", f"₹{int(inc - exp):,}")
+    st.header("📊 Financial Reports")
+    
+    # Pre-processing Data
+    df_coll['amount'] = df_coll['amount_received'].apply(clean_num)
+    df_exp['amount_val'] = df_exp['amount'].apply(clean_num)
+    
+    # 1. LIQUIDITY SUMMARY (Cash & Bank Wise)
+    st.subheader("🏦 Liquidity Position")
+    
+    # Calculate totals by mode
+    def get_balance_by_mode(mode_name):
+        inc = df_coll[df_coll['mode'].str.lower() == mode_name.lower()]['amount'].sum()
+        out = df_exp[df_exp['mode'].str.lower() == mode_name.lower()]['amount_val'].sum()
+        return inc, out, inc - out
 
+    cash_in, cash_out, cash_bal = get_balance_by_mode("Cash")
+    bank_in, bank_out, bank_bal = get_balance_by_mode("Bank Transfer") # Also include UPI logic as needed
+    upi_in, upi_out, upi_bal = get_balance_by_mode("UPI")
+
+    l1, l2, l3 = st.columns(3)
+    l1.metric("💵 Cash on Hand", f"₹{int(cash_bal):,}", f"In: ₹{int(cash_in):,}")
+    l2.metric("🏦 Bank Balance", f"₹{int(bank_bal + upi_bal):,}", f"In: ₹{int(bank_in + upi_in):,}")
+    l3.metric("💰 Total Society Funds", f"₹{int(cash_bal + bank_bal + upi_bal):,}")
+
+    st.divider()
+
+    # 2. MONTHLY EXPENSE DRILL-DOWN
+    st.subheader("📅 Monthly Expense Report")
+    
+    # Ensure date_dt exists for filtering
+    if 'date' in df_exp.columns:
+        df_exp['date_dt'] = pd.to_datetime(df_exp['date'], dayfirst=True, errors='coerce')
+        df_exp['month_yr'] = df_exp['date_dt'].dt.strftime('%b %Y')
+        
+        available_months = df_exp['month_yr'].unique()
+        sel_month = st.selectbox("Select Month to Analyze Expenses", available_months)
+        
+        month_df = df_exp[df_exp['month_yr'] == sel_month]
+        
+        col_ex1, col_ex2 = st.columns([2, 1])
+        with col_ex1:
+            st.dataframe(month_df[['date', 'head', 'amount', 'mode']], use_container_width=True, hide_index=True)
+        with col_ex2:
+            st.write(f"**Total for {sel_month}**")
+            st.title(f"₹{int(month_df['amount_val'].sum()):,}")
+    
+    st.divider()
+
+    # 3. YEARLY FINANCIAL REPORT
+    st.subheader("📈 Yearly Performance")
+    
+    # Add Year column to both
+    df_coll['year'] = pd.to_datetime(df_coll['date'], dayfirst=True, errors='coerce').dt.year
+    df_exp['year'] = pd.to_datetime(df_exp['date'], dayfirst=True, errors='coerce').dt.year
+    
+    years = sorted(df_coll['year'].dropna().unique().astype(int), reverse=True)
+    sel_year = st.selectbox("Select Financial Year", years)
+    
+    year_inc = df_coll[df_coll['year'] == sel_year]['amount'].sum()
+    year_exp = df_exp[df_exp['year'] == sel_year]['amount_val'].sum()
+    
+    y1, y2, y3 = st.columns(3)
+    y1.metric(f"{sel_year} Total Income", f"₹{int(year_inc):,}")
+    y2.metric(f"{sel_year} Total Expenses", f"₹{int(year_exp):,}")
+    y3.metric(f"{sel_year} Net Surplus", f"₹{int(year_inc - year_exp):,}")
+    
+    # Yearly breakdown by category (Head)
+    st.write(f"**{sel_year} Expense Distribution**")
+    yearly_breakdown = df_exp[df_exp['year'] == sel_year].groupby('head')['amount_val'].sum().reset_index()
+    yearly_breakdown.columns = ['Expense Category', 'Total Amount']
+    st.table(yearly_breakdown.style.format({"Total Amount": "₹{:,}"}))
 # ================= ADMIN TABS =================
 if st.session_state.role == "admin":
     with tabs[3]:
@@ -169,3 +232,4 @@ if st.session_state.role == "admin":
 
 st.markdown("---")
 st.caption("DBE Society Management Portal v2.1")
+
