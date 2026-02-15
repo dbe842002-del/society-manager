@@ -52,17 +52,6 @@ def clean_num(val):
     try: return float(s)
     except: return 0.0
 
-def clean_column(df, col_name):
-    if col_name in df.columns:
-        df[col_name] = (
-            df[col_name]
-            .astype(str)
-            .str.replace(r'[₹,\s]', '', regex=True)
-            .replace(['nan', 'None', ''], '0')
-            .astype(float)
-        )
-    return df
-
 # ================= AUTH =================
 if "authenticated" not in st.session_state:
     st.session_state.authenticated, st.session_state.role = False, None
@@ -90,7 +79,6 @@ df_coll = load_data("Collections")
 df_exp = load_data("Expenses")
 
 current_date = datetime.now()
-# Assuming billing starts Jan 2025
 total_months = (current_date.year - 2025) * 12 + current_date.month
 
 # ================= TABS =================
@@ -119,20 +107,16 @@ with tabs[0]:
     c2.metric("Total Flats", len(df_owners))
     c2.metric("Total Owed", f"₹{int(total_due_val):,}")
 
-    # --- STYLING ---
     df_m = pd.DataFrame(master_grid)
-    
     def color_due_col(val):
-        if val > 6300: return 'background-color: #f8d7da; color: #721c24; font-weight: bold;' # Red
-        if val > 0: return 'background-color: #fff3cd; color: #856404;' # Yellow
-        return 'background-color: #d4edda; color: #155724;' # Green
+        if val > 6300: return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
+        if val > 0: return 'background-color: #fff3cd; color: #856404;'
+        return 'background-color: #d4edda; color: #155724;'
 
     if not df_m.empty:
-        # Apply style specifically to the 'Due' column
         styled_master = df_m.style.applymap(color_due_col, subset=['Due']).format({"Due": "₹{:,}"})
         st.dataframe(styled_master, use_container_width=True, hide_index=True)
 
-# ================= TAB 1: LOOKUP =================
 # ================= TAB 1: LOOKUP =================
 with tabs[1]:
     st.header("🔍 Flat Status Lookup")
@@ -148,9 +132,8 @@ with tabs[1]:
     m2.metric("Owner", str(owner_row.get('owner', 'N/A')))
     m3.metric("Total Paid", f"₹{int(paid):,}")
     
-    # --- ADDED RECEIPT GENERATOR ---
     if st.button("Generate WhatsApp Receipt"):
-        receipt = f"""
+        receipt_text = f"""
 *DBE Residency Receipt*
 -----------------------
 *Flat:* {sel}
@@ -159,21 +142,19 @@ with tabs[1]:
 *Current Balance:* ₹{int(bal):,}
 *Date:* {datetime.now().strftime('%d-%m-%Y')}
 """
-        st.code(receipt, language="markdown")
+        st.code(receipt_text, language="markdown")
 
     st.subheader("📜 Payment History")
     hist = df_coll[df_coll['flat'] == sel][['date', 'months_paid', 'amount_received', 'mode']]
     st.dataframe(hist.sort_values('date', ascending=False) if not hist.empty else pd.DataFrame(), use_container_width=True, hide_index=True)
+
 # ================= TAB 2: FINANCIALS =================
 with tabs[2]:
     st.header("📊 Financial Reports")
     
-    # --- 0. SAFE PRE-PROCESS DATA ---
-    # We create local copies to avoid modifying the cached data
     df_c_local = df_coll.copy()
     df_e_local = df_exp.copy()
 
-    # Ensure columns exist even if data is missing
     if not df_c_local.empty:
         df_c_local['date_dt'] = pd.to_datetime(df_c_local['date'], dayfirst=True, errors='coerce')
         df_c_local['amount_val'] = df_c_local['amount_received'].apply(clean_num)
@@ -186,15 +167,12 @@ with tabs[2]:
         df_e_local['year_int'] = df_e_local['date_dt'].dt.year
         df_e_local['month_str'] = df_e_local['date_dt'].dt.strftime('%B')
     else:
-        # Create dummy columns to prevent KeyError in the filters below
         df_e_local = pd.DataFrame(columns=['date', 'head', 'amount', 'mode', 'date_dt', 'amount_val', 'year_int', 'month_str'])
 
-    # --- 1. LIQUIDITY SUMMARY ---
     st.subheader("🏦 Cash & Bank Balance")
     
     def get_totals(df, col):
         if df.empty or col not in df.columns: return 0.0, 0.0
-        # Ensure mode column is string to prevent errors
         modes = df['mode'].astype(str).str.lower()
         cash = df[modes.str.contains('cash', na=False)][col].sum()
         bank = df[modes.str.contains('bank|upi|transfer|online|neft', na=False)][col].sum()
@@ -209,18 +187,13 @@ with tabs[2]:
     l3.metric("💰 Total Liquidity", f"₹{int((c_in + b_in) - (c_out + b_out)):,}")
 
     st.divider()
-
-    # --- 2. MONTHLY EXPENSE DRILL-DOWN ---
     st.subheader("📅 Monthly Expense Drill-down")
     
-    # Year logic: Use data years + 2025/2026
     data_years = df_e_local['year_int'].dropna().unique().astype(int).tolist()
     combined_years = sorted(list(set(data_years + [2025, 2026])), reverse=True)
     
     ex_col1, ex_col2 = st.columns(2)
     sel_year_ex = ex_col1.selectbox("Select Year", combined_years, key="exp_yr")
-    
-    # Month list based on selection
     available_months = df_e_local[df_e_local['year_int'] == sel_year_ex]['month_str'].unique()
     month_list = list(available_months) if len(available_months) > 0 else ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
     sel_month_ex = ex_col2.selectbox("Select Month", month_list)
@@ -232,7 +205,7 @@ with tabs[2]:
         st.info(f"Total for {sel_month_ex} {sel_year_ex}: ₹{int(month_data['amount_val'].sum()):,}")
     else:
         st.warning(f"No expense data recorded for {sel_month_ex} {sel_year_ex}")
-        
+
 # ================= ADMIN TABS =================
 if st.session_state.role == "admin":
     with tabs[3]:
@@ -242,96 +215,14 @@ if st.session_state.role == "admin":
             st.rerun()
         st.dataframe(load_data(st.selectbox("View Sheet", ["Owners", "Collections", "Expenses"])))
 
-    from streamlit_gsheets import GSheetsConnection
+    with tabs[4]:
+        st.header("➕ Add New Entry")
+        st.info("Direct write-back is currently disabled. Please update the Google Sheet directly.")
+        with st.form("entry_form"):
+            t = st.radio("Type", ["Income", "Expense"])
+            a = st.number_input("Amount", min_value=0)
+            if st.form_submit_button("Submit (Preview Only)"):
+                st.write(f"Record for ₹{a} created in preview mode.")
 
-# 1. Initialize Connection
-conn = st.connection("gsheets", type=GSheetsConnection)
-
-with tabs[4]:
-    st.header("➕ Add New Entry")
-    
-    # Select which sheet to add data to
-    sheet_target = st.radio("Record Type", ["Collections", "Expenses"], horizontal=True)
-    
-    with st.form("entry_form", clear_on_submit=True):
-        col1, col2 = st.columns(2)
-    if st.button("Generate WhatsApp Receipt"):
-        # Everything below this line MUST be indented 
-        receipt = f"""
-    *DBE Residency Receipt*
-    -----------------------
-    *Flat:* {sel}
-    *Owner:* {owner_row.get('owner')}
-    *Amount Paid:* ₹{int(paid):,}
-    *Current Balance:* ₹{int(bal):,}
-    *Date:* {datetime.now().strftime('%d-%m-%Y')}
-    """
-    st.code(receipt, language="markdown")
-        # Common Fields
-        entry_date = col1.date_input("Date", datetime.now())
-        amount = col2.number_input("Amount (₹)", min_value=0, step=100)
-        mode = col1.selectbox("Payment Mode", ["Bank/UPI", "Cash", "Cheque"])
-        
-        # Sheet Specific Fields
-        if sheet_target == "Collections":
-            flat_list = sorted(df_owners['flat'].dropna().unique())
-            flat_no = col2.selectbox("Flat No", flat_list)
-            note = st.text_input("Months Paid (e.g., Jan-Mar 2025)")
-            
-            # Prepare data row for Collections sheet
-            new_row = {
-                "date": entry_date.strftime("%d/%m/%Y"),
-                "flat": flat_no,
-                "amount_received": amount,
-                "mode": mode,
-                "months_paid": note
-            }
-        else:
-            expense_head = col2.text_input("Expense Head (e.g., Cleaning, Electricity)")
-            note = st.text_input("Remarks")
-            
-            # Prepare data row for Expenses sheet
-            new_row = {
-                "date": entry_date.strftime("%d/%m/%Y"),
-                "head": expense_head,
-                "amount": amount,
-                "mode": mode,
-                "remarks": note
-            }
-
-        submitted = st.form_submit_button("💾 Save Entry")
-        
-        if submitted:
-            if amount <= 0:
-                st.error("Please enter a valid amount.")
-            else:
-                try:
-                    # FETCH existing data
-                    existing_data = conn.read(worksheet=sheet_target, ttl=0)
-                    
-                    # APPEND new row
-                    updated_df = pd.concat([existing_data, pd.DataFrame([new_row])], ignore_index=True)
-                    
-                    # WRITE back to Google Sheets
-                    conn.update(worksheet=sheet_target, data=updated_df)
-                    
-                    st.success(f"✅ Successfully added to {sheet_target}!")
-                    st.cache_data.clear() # Clear cache to show new data immediately
-                except Exception as e:
-                    st.error(f"Error connecting to Google Sheets: {e}")
 st.markdown("---")
 st.caption("DBE Society Management Portal v2.1")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
