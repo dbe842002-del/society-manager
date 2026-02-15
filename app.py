@@ -156,35 +156,40 @@ with tabs[1]:
 with tabs[2]:
     st.header("📊 Financial Reports")
     
-    # --- SAFE DATA PREP ---
-    # Ensure columns exist even if sheet is empty
-    if not df_exp.empty:
-        df_exp['date_dt'] = pd.to_datetime(df_exp['date'], dayfirst=True, errors='coerce')
-        df_exp['amount_val'] = df_exp['amount'].apply(clean_num)
-        df_exp['year_int'] = df_exp['date_dt'].dt.year
-        df_exp['month_str'] = df_exp['date_dt'].dt.strftime('%B')
-    else:
-        # Create empty columns to prevent KeyError
-        for col in ['date_dt', 'amount_val', 'year_int', 'month_str']:
-            df_exp[col] = None
+    # --- 0. SAFE PRE-PROCESS DATA ---
+    # We create local copies to avoid modifying the cached data
+    df_c_local = df_coll.copy()
+    df_e_local = df_exp.copy()
 
-    if not df_coll.empty:
-        df_coll['date_dt'] = pd.to_datetime(df_coll['date'], dayfirst=True, errors='coerce')
-        df_coll['amount_val'] = df_coll['amount_received'].apply(clean_num)
+    # Ensure columns exist even if data is missing
+    if not df_c_local.empty:
+        df_c_local['date_dt'] = pd.to_datetime(df_c_local['date'], dayfirst=True, errors='coerce')
+        df_c_local['amount_val'] = df_c_local['amount_received'].apply(clean_num)
     else:
-        df_coll['date_dt'], df_coll['amount_val'] = None, 0.0
+        df_c_local = pd.DataFrame(columns=['date', 'amount_received', 'mode', 'date_dt', 'amount_val'])
 
-    # 1. LIQUIDITY SUMMARY (Remains largely the same)
+    if not df_e_local.empty:
+        df_e_local['date_dt'] = pd.to_datetime(df_e_local['date'], dayfirst=True, errors='coerce')
+        df_e_local['amount_val'] = df_e_local['amount'].apply(clean_num)
+        df_e_local['year_int'] = df_e_local['date_dt'].dt.year
+        df_e_local['month_str'] = df_e_local['date_dt'].dt.strftime('%B')
+    else:
+        # Create dummy columns to prevent KeyError in the filters below
+        df_e_local = pd.DataFrame(columns=['date', 'head', 'amount', 'mode', 'date_dt', 'amount_val', 'year_int', 'month_str'])
+
+    # --- 1. LIQUIDITY SUMMARY ---
     st.subheader("🏦 Cash & Bank Balance")
     
     def get_totals(df, col):
         if df.empty or col not in df.columns: return 0.0, 0.0
-        cash = df[df['mode'].str.contains('cash', case=False, na=False)][col].sum()
-        bank = df[df['mode'].str.contains('bank|upi|transfer|online|neft', case=False, na=False)][col].sum()
+        # Ensure mode column is string to prevent errors
+        modes = df['mode'].astype(str).str.lower()
+        cash = df[modes.str.contains('cash', na=False)][col].sum()
+        bank = df[modes.str.contains('bank|upi|transfer|online|neft', na=False)][col].sum()
         return cash, bank
 
-    c_in, b_in = get_totals(df_coll, 'amount_val')
-    c_out, b_out = get_totals(df_exp, 'amount_val')
+    c_in, b_in = get_totals(df_c_local, 'amount_val')
+    c_out, b_out = get_totals(df_e_local, 'amount_val')
 
     l1, l2, l3 = st.columns(3)
     l1.metric("💵 Cash on Hand", f"₹{int(c_in - c_out):,}")
@@ -193,30 +198,22 @@ with tabs[2]:
 
     st.divider()
 
-    # 2. MONTH & YEAR WISE EXPENSE REPORT
+    # --- 2. MONTHLY EXPENSE DRILL-DOWN ---
     st.subheader("📅 Monthly Expense Drill-down")
     
-    # Fallback years if data is empty
-    available_years = df_exp['year_int'].dropna().unique().astype(int).tolist() if not df_exp.empty else []
-    combined_years = sorted(list(set(available_years + [2024, 2025, 2026])), reverse=True)
+    # Year logic: Use data years + 2025/2026
+    data_years = df_e_local['year_int'].dropna().unique().astype(int).tolist()
+    combined_years = sorted(list(set(data_years + [2025, 2026])), reverse=True)
     
     ex_col1, ex_col2 = st.columns(2)
     sel_year_ex = ex_col1.selectbox("Select Year", combined_years, key="exp_yr")
     
-    # Dynamic month list based on selected year
-    if not df_exp.empty:
-        months_in_year = df_exp[df_exp['year_int'] == sel_year_ex]['month_str'].unique()
-        month_list = list(months_in_year) if len(months_in_year) > 0 else ["January"]
-    else:
-        month_list = ["January"]
-        
+    # Month list based on selection
+    available_months = df_e_local[df_e_local['year_int'] == sel_year_ex]['month_str'].unique()
+    month_list = list(available_months) if len(available_months) > 0 else ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
     sel_month_ex = ex_col2.selectbox("Select Month", month_list)
 
-    # The filter that was crashing:
-    if not df_exp.empty:
-        month_data = df_exp[(df_exp['year_int'] == sel_year_ex) & (df_exp['month_str'] == sel_month_ex)]
-    else:
-        month_data = pd.DataFrame()
+    month_data = df_e_local[(df_e_local['year_int'] == sel_year_ex) & (df_e_local['month_str'] == sel_month_ex)]
     
     if not month_data.empty:
         st.dataframe(month_data[['date', 'head', 'amount', 'mode']], use_container_width=True, hide_index=True)
@@ -311,6 +308,7 @@ with tabs[4]:
                     st.error(f"Error connecting to Google Sheets: {e}")
 st.markdown("---")
 st.caption("DBE Society Management Portal v2.1")
+
 
 
 
