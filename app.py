@@ -239,7 +239,7 @@ with tabs[1]:
             st.info("No payments recorded")
     
     # Tab 4: Admin Control & Delete
-    with tabs[4]:
+        with tabs[4]:
         st.header("⚙️ Admin Panel")
         
         c1, c2 = st.columns(2)
@@ -318,6 +318,7 @@ with tabs[1]:
 # ================= FOOTER =================
 st.markdown("---")
 st.markdown("*DBE Society Management Portal v2.0 | Built with ❤️ for efficient management*")
+
 
 
 
