@@ -95,8 +95,8 @@ with t[3]:
         if not b_data.empty:
             txt = f"*DBE {sb} Summary*\n" + "\n".join([f"• {r['flat']}: ₹{int(clean_num(r['amount_received']))}" for _,r in b_data.iterrows()])
             st.code(txt); st.markdown(f'<a href="https://wa.me/?text={urllib.parse.quote(txt)}" target="_blank" class="wa-btn">Share Summary</a>', unsafe_allow_html=True)
-    else: st.warning("Admin Only")
-        # 3. DOWNLOAD MONTHLY AUDIT REPORT (ADMIN ONLY)
+    
+     # 3. DOWNLOAD MONTHLY AUDIT REPORT (ADMIN ONLY)
         st.divider()
         st.subheader("📑 Audit & Backup")
         audit_col1, audit_col2 = st.columns([2, 1])
@@ -123,3 +123,6 @@ with t[3]:
             )
         else:
             st.info("No records found to download for this month.")
+
+    else: st.warning("Admin Only")
+       
