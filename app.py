@@ -7,7 +7,6 @@ from datetime import datetime
 # ================= 1. CONFIG & BENCHMARKS =================
 MONTHLY_MAINT = 2100
 DEFAULTER_LIMIT = 6300 
-# Sets the browser tab title
 st.set_page_config(page_title="DBE Maint Summery", layout="wide")
 
 # Custom CSS for UI and the Red Defaulter Scroller
@@ -28,6 +27,10 @@ st.markdown("""
         background-color: #25D366; color: white !important;
         padding: 8px 16px; border-radius: 8px; text-decoration: none;
         font-weight: bold; display: inline-flex; align-items: center; gap: 8px;
+    }
+    .audit-box {
+        background-color: #f1f2f6; border-radius: 10px; padding: 20px;
+        border: 1px solid #ced4da; margin-top: 10px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -56,7 +59,6 @@ def clean_num(val):
 if "authenticated" not in st.session_state:
     st.session_state.authenticated, st.session_state.role = False, None
 
-# Main Page Heading
 st.title("🏢 DBE Maint Summery")
 
 if not st.session_state.authenticated:
@@ -75,7 +77,7 @@ if not st.session_state.authenticated:
             else: st.error("❌ Invalid credentials")
     st.stop()
 
-# ================= 4. CORE CALCULATIONS =================
+# ================= 4. CORE DATA & LOGIC =================
 df_owners = load_data("Owners")
 df_coll = load_data("Collections")
 df_exp = load_data("Expenses")
@@ -134,13 +136,76 @@ with tabs[1]:
         msg = f"*DBE Receipt*\nFlat: {sel_f}\nMonth: {sel_m}\nPaid: ₹{int(paid_for_month):,}\nBal: ₹{int(bal_f):,}"
         st.markdown(f'<a href="https://wa.me/?text={urllib.parse.quote(msg)}" target="_blank" class="wa-btn">Send WhatsApp</a>', unsafe_allow_html=True)
 
-# --- TAB 2: FINANCIALS ---
+# --- TAB 2: FINANCIALS & FULL REPORT (DBE v7 Style) ---
 with tabs[2]:
     st.header("📊 Financial Position")
-    cash, bank = get_financial_summary(df_coll, df_exp)
-    st.columns(3)[0].metric("💵 Cash", f"₹{int(cash):,}")
-    st.columns(3)[1].metric("🏦 Bank", f"₹{int(bank):,}")
-    st.columns(3)[2].metric("💰 Total", f"₹{int(cash + bank):,}")
+    cur_cash, cur_bank = get_financial_summary(df_coll, df_exp)
+    
+    m1, m2, m3 = st.columns(3)
+    m1.metric("💵 Current Cash", f"₹{int(cur_cash):,}")
+    m2.metric("🏦 Current Bank", f"₹{int(cur_bank):,}")
+    m3.metric("💰 Total Funds", f"₹{int(cur_cash + cur_bank):,}")
+    
+    st.divider()
+    st.subheader("🗓️ Monthly Audit Statement (v7)")
+    sel_rep_m = st.selectbox("Select Report Month", MONTHS_LIST, index=MONTHS_LIST.index(current_date.strftime("%b-%Y")))
+    
+    # Logic for Opening/Closing per Month
+    rep_idx = MONTHS_LIST.index(sel_rep_m)
+    past_months = MONTHS_LIST[:rep_idx]
+    
+    # Calculate Opening (Sum of all transactions BEFORE selected month)
+    df_coll['m_mode'] = df_coll['mode'].astype(str).str.strip().str.lower()
+    df_exp['m_mode'] = df_exp['mode'].astype(str).str.strip().str.lower()
+    
+    # Simple logic: If we don't have exact dates for every row, we filter by the 'months_paid' or 'date' string
+    # For a precise v7 report, we use 'date' column string matching or month names
+    def get_bal_upto(month_str, is_opening=True):
+        m_idx = MONTHS_LIST.index(month_str)
+        target_months = MONTHS_LIST[:m_idx] if is_opening else MONTHS_LIST[:m_idx+1]
+        
+        # This is a simplified calculation based on your flat maintenance logic
+        # For a 100% accurate daily cashbook, 'date' sorting is required
+        c_in = df_coll[df_coll['months_paid'].apply(lambda x: any(m in str(x) for m in target_months)) & (df_coll['m_mode'] == 'cash')]['amount_received'].apply(clean_num).sum()
+        b_in = df_coll[df_coll['months_paid'].apply(lambda x: any(m in str(x) for m in target_months)) & (df_coll['m_mode'] != 'cash')]['amount_received'].apply(clean_num).sum()
+        
+        c_out = df_exp[df_exp['date'].apply(lambda x: any(m in str(x) for m in target_months)) & (df_exp['m_mode'] == 'cash')]['amount'].apply(clean_num).sum()
+        b_out = df_exp[df_exp['date'].apply(lambda x: any(m in str(x) for m in target_months)) & (df_exp['m_mode'] != 'cash')]['amount'].apply(clean_num).sum()
+        
+        return (c_in - c_out), (b_in - b_out)
+
+    op_cash, op_bank = get_bal_upto(sel_rep_m, True)
+    cl_cash, cl_bank = get_bal_upto(sel_rep_m, False)
+    
+    # Monthly Activity
+    m_coll = df_coll[df_coll['months_paid'].astype(str).str.contains(sel_rep_m, case=False, na=False)]
+    m_exp = df_exp[df_exp['date'].astype(str).str.contains(sel_rep_m, case=False, na=False)]
+    
+    cash_coll = m_coll[m_coll['m_mode'] == 'cash']['amount_received'].apply(clean_num).sum()
+    bank_coll = m_coll[m_coll['m_mode'] != 'cash']['amount_received'].apply(clean_num).sum()
+    
+    cash_ex = m_exp[m_exp['m_mode'] == 'cash']['amount'].apply(clean_num).sum()
+    bank_ex = m_exp[m_exp['m_mode'] != 'cash']['amount'].apply(clean_num).sum()
+
+    st.markdown(f"""
+    <div class="audit-box">
+        <h4 style="text-align:center; color:#2d3436;">DBE Statement for {sel_rep_m}</h4>
+        <hr>
+        <table style="width:100%; border-collapse: collapse;">
+            <tr style="background-color:#dfe6e9;"><td><b>PARTICULARS</b></td><td align="right"><b>CASH (₹)</b></td><td align="right"><b>BANK (₹)</b></td></tr>
+            <tr><td>Opening Balance</td><td align="right">{int(op_cash):,}</td><td align="right">{int(op_bank):,}</td></tr>
+            <tr><td>(+) Maintenance Collection</td><td align="right" style="color:green;">{int(cash_coll):,}</td><td align="right" style="color:green;">{int(bank_coll):,}</td></tr>
+            <tr><td>(-) Monthly Expenses</td><td align="right" style="color:red;">{int(cash_ex):,}</td><td align="right" style="color:red;">{int(bank_ex):,}</td></tr>
+            <tr style="border-top:2px solid #2d3436; font-weight:bold;"><td>Closing Balance</td><td align="right">{int(cl_cash):,}</td><td align="right">{int(cl_bank):,}</td></tr>
+        </table>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.subheader("🧾 Detailed Expense Report")
+    if not m_exp.empty:
+        st.dataframe(m_exp[['date', 'head', 'amount', 'mode']], use_container_width=True, hide_index=True)
+    else:
+        st.info("No expenses recorded for this month.")
 
 # --- TAB 3: ADMIN ---
 with tabs[3]:
@@ -151,22 +216,11 @@ with tabs[3]:
             st.rerun()
 
         st.divider()
-        st.subheader("📂 Bulk Monthly Summary")
-        sel_bulk = st.selectbox("Select Month for Summary", MONTHS_LIST, index=MONTHS_LIST.index(current_date.strftime("%b-%Y")), key="bulk")
-        bulk_data = df_coll[df_coll['months_paid'].astype(str).str.contains(sel_bulk, case=False, na=False)]
-        if not bulk_data.empty:
-            txt = f"*DBE {sel_bulk} Summary*\n" + "\n".join([f"• Flat {r['flat']}: ₹{int(clean_num(r['amount_received']))}" for _,r in bulk_data.iterrows()])
-            st.code(txt); st.markdown(f'<a href="https://wa.me/?text={urllib.parse.quote(txt)}" target="_blank" class="wa-btn">Share Summary</a>', unsafe_allow_html=True)
-
-        st.divider()
-        st.subheader("📑 Audit & Backup")
-        audit_col1, audit_col2 = st.columns([2, 1])
-        sel_audit = audit_col1.selectbox("Select Month for Audit", MONTHS_LIST, index=MONTHS_LIST.index(current_date.strftime("%b-%Y")), key="audit_sel")
-        audit_coll = df_coll[df_coll['months_paid'].astype(str).str.contains(sel_audit, case=False, na=False)]
-        
-        if not audit_coll.empty:
-            csv = audit_coll[['date', 'flat', 'amount_received', 'mode', 'months_paid']].to_csv(index=False).encode('utf-8')
-            audit_col2.write(" ")
-            audit_col2.download_button(label="📥 Download CSV", data=csv, file_name=f"DBE_Audit_{sel_audit}.csv", mime="text/csv")
+        st.subheader("📑 Audit CSV Download")
+        csv_m = st.selectbox("Select Month for CSV", MONTHS_LIST, key="csv_sel")
+        audit_data = df_coll[df_coll['months_paid'].astype(str).str.contains(csv_m, case=False, na=False)]
+        if not audit_data.empty:
+            csv = audit_data.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Download Transaction CSV", csv, f"DB_Audit_{csv_m}.csv", "text/csv")
     else:
         st.warning("Admin Access Only")
