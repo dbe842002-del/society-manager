@@ -9,7 +9,7 @@ MONTHLY_MAINT = 2100
 DEFAULTER_LIMIT = 6300 
 st.set_page_config(page_title="DBE Maint Summery", layout="wide")
 
-# Custom CSS
+# Custom CSS for UI
 st.markdown("""
 <style>
     .main { background-color: #f8f9fa; }
@@ -64,7 +64,6 @@ st.title("🏢 DBE Maint Summery")
 if not st.session_state.authenticated:
     _, login_col, _ = st.columns([1, 1, 1])
     with login_col:
-        st.subheader("🔐 Login")
         role = st.selectbox("Role", ["Viewer", "Admin"])
         pwd = st.text_input("Password", type="password")
         if st.button("Enter Portal"):
@@ -81,34 +80,29 @@ if not st.session_state.authenticated:
 df_owners = load_data("Owners")
 df_coll = load_data("Collections")
 df_exp = load_data("Expenses")
-df_other = load_data("Other_Income") # New Sheet Needed: Other_Income
+df_other = load_data("Other_Income") # Ensure this sheet exists in your Google Sheet
 
 current_date = datetime.now()
 total_months = (current_date.year - 2025) * 12 + current_date.month
 MONTHS_LIST = [f"{m}-{y}" for y in [2025, 2026] for m in ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]]
 
-def get_financial_summary():
-    # Helper to clean and sum by mode
-    def sum_by_mode(df, amt_col, is_cash=True):
+def get_financial_summary(coll_df, exp_df, other_df):
+    """Calculates Live Balance including Maintenance and Other Income."""
+    def sum_mode(df, amt_col, is_cash=True):
         if df.empty: return 0.0
-        df['m_clean'] = df['mode'].astype(str).str.strip().str.lower()
-        if is_cash:
-            return df[df['m_clean'] == 'cash'][amt_col].apply(clean_num).sum()
-        return df[df['m_clean'] != 'cash'][amt_col].apply(clean_num).sum()
+        df['m_tmp'] = df['mode'].astype(str).str.strip().str.lower()
+        if is_cash: return df[df['m_tmp'] == 'cash'][amt_col].apply(clean_num).sum()
+        return df[df['m_tmp'] != 'cash'][amt_col].apply(clean_num).sum()
 
-    cash_in = sum_by_mode(df_coll, 'amount_received', True) + sum_by_mode(df_other, 'amount', True)
-    bank_in = sum_by_mode(df_coll, 'amount_received', False) + sum_by_mode(df_other, 'amount', False)
-    cash_out = sum_by_mode(df_exp, 'amount', True)
-    bank_out = sum_by_mode(df_exp, 'amount', False)
+    cash_in = sum_mode(coll_df, 'amount_received', True) + sum_mode(other_df, 'amount', True)
+    bank_in = sum_mode(coll_df, 'amount_received', False) + sum_mode(other_df, 'amount', False)
+    cash_out = sum_mode(exp_df, 'amount', True)
+    bank_out = sum_mode(exp_df, 'amount', False)
     
     return (cash_in - cash_out), (bank_in - bank_out)
 
 # ================= 5. APP TABS =================
-tab_list = ["📋 Dashboard", "🔍 Receipt Search", "📊 Financials", "⚙️ Admin Controls"]
-if st.session_state.role == "admin":
-    tab_list.append("➕ Add Other Income")
-
-tabs = st.tabs(tab_list)
+tabs = st.tabs(["📋 Dashboard", "🔍 Receipt Search", "📊 Financials", "⚙️ Admin Controls"])
 
 # --- TAB 0: DASHBOARD ---
 with tabs[0]:
@@ -134,7 +128,7 @@ with tabs[1]:
     sel_f = c1.selectbox("Select Flat", sorted(df_owners['flat'].unique()))
     sel_m = c2.selectbox("Select Month", MONTHS_LIST, index=MONTHS_LIST.index(current_date.strftime("%b-%Y")))
     m_data = df_coll[(df_coll['flat'] == sel_f) & (df_coll['months_paid'].astype(str).str.contains(sel_m, case=False, na=False))]
-    paid_for_month = sum([clean_num(r['amount_received'])/max(len(str(r['months_paid']).split(',')),1) for _,r in m_data.iterrows()])
+    paid_for_month = sum([clean_num(r['amount_received'])/max(len(str(r['months_paid']).split(',')), 1) for _,r in m_data.iterrows()])
     
     bal_f = [x['Due'] for x in master_grid if x['Flat'] == sel_f][0]
     
@@ -143,77 +137,89 @@ with tabs[1]:
     m2.metric("Current Balance", f"₹{int(bal_f):,}")
     m3.metric("Owner", df_owners[df_owners['flat'] == sel_f]['owner'].iloc[0])
 
-# --- TAB 2: FINANCIALS & OTHER INCOME ---
+# --- TAB 2: FINANCIALS (INTEGRATED REPORT) ---
 with tabs[2]:
     st.header("📊 Financial Position")
-    cur_cash, cur_bank = get_financial_summary()
+    cur_cash, cur_bank = get_financial_summary(df_coll, df_exp, df_other)
     
-    m1, m2, m3 = st.columns(3)
-    m1.metric("💵 Current Cash", f"₹{int(cur_cash):,}")
-    m2.metric("🏦 Current Bank", f"₹{int(cur_bank):,}")
-    m3.metric("💰 Total Funds", f"₹{int(cur_cash + cur_bank):,}")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("💵 Current Cash", f"₹{int(cur_cash):,}")
+    col2.metric("🏦 Current Bank", f"₹{int(cur_bank):,}")
+    col3.metric("💰 Total Funds", f"₹{int(cur_cash + cur_bank):,}")
     
-    st.divider()
-    st.subheader("💡 Other Income Received (Non-Maintenance)")
-    if not df_other.empty:
-        st.dataframe(df_other[['date', 'source', 'amount', 'mode', 'remarks']], use_container_width=True, hide_index=True)
-        st.info(f"Total Other Income: ₹{int(df_other['amount'].apply(clean_num).sum()):,}")
-    else:
-        st.info("No other income recorded yet.")
-
     st.divider()
     st.subheader("🗓️ Monthly Audit Statement (v7)")
     sel_rep_m = st.selectbox("Select Report Month", MONTHS_LIST, index=MONTHS_LIST.index(current_date.strftime("%b-%Y")))
     
-    # Simple Monthly Activity Filter
+    # Filter Data for Selected Month
     m_coll = df_coll[df_coll['months_paid'].astype(str).str.contains(sel_rep_m, case=False, na=False)]
     m_other = df_other[df_other['date'].astype(str).str.contains(sel_rep_m, case=False, na=False)]
     m_exp = df_exp[df_exp['date'].astype(str).str.contains(sel_rep_m, case=False, na=False)]
     
-    cash_in_m = m_coll[m_coll['mode'].str.lower() == 'cash']['amount_received'].apply(clean_num).sum() + m_other[m_other['mode'].str.lower() == 'cash']['amount'].apply(clean_num).sum()
-    bank_in_m = m_coll[m_coll['mode'].str.lower() != 'cash']['amount_received'].apply(clean_num).sum() + m_other[m_other['mode'].str.lower() != 'cash']['amount'].apply(clean_num).sum()
+    # Income Calculations
+    maint_cash = m_coll[m_coll['mode'].str.lower() == 'cash']['amount_received'].apply(clean_num).sum()
+    maint_bank = m_coll[m_coll['mode'].str.lower() != 'cash']['amount_received'].apply(clean_num).sum()
     
-    cash_ex_m = m_exp[m_exp['mode'].str.lower() == 'cash']['amount'].apply(clean_num).sum()
-    bank_ex_m = m_exp[m_exp['mode'].str.lower() != 'cash']['amount'].apply(clean_num).sum()
+    other_cash = m_other[m_other['mode'].str.lower() == 'cash']['amount'].apply(clean_num).sum()
+    other_bank = m_other[m_other['mode'].str.lower() != 'cash']['amount'].apply(clean_num).sum()
+    
+    # Expense Calculations
+    exp_cash = m_exp[m_exp['mode'].str.lower() == 'cash']['amount'].apply(clean_num).sum()
+    exp_bank = m_exp[m_exp['mode'].str.lower() != 'cash']['amount'].apply(clean_num).sum()
 
+    # --- THE DBE v7 FINANCIAL TABLE ---
     st.markdown(f"""
     <div class="audit-box">
-        <h4 style="text-align:center;">{sel_rep_m} Summary</h4>
-        <p><b>Total Collections (Maint + Other):</b> ₹{int(cash_in_m + bank_in_m):,}</p>
-        <p><b>Total Expenses:</b> ₹{int(cash_ex_m + bank_ex_m):,}</p>
-        <hr>
-        <p style="font-size:18px;"><b>Net Monthly Surplus: ₹{int((cash_in_m + bank_in_m) - (cash_ex_m + bank_ex_m)):,}</b></p>
+        <h4 style="text-align:center;">Statement for {sel_rep_m}</h4>
+        <table style="width:100%; border-collapse: collapse; font-family: sans-serif;">
+            <tr style="background-color:#dfe6e9; border-bottom: 2px solid #2d3436;">
+                <td style="padding:10px;"><b>PARTICULARS</b></td>
+                <td align="right" style="padding:10px;"><b>CASH (₹)</b></td>
+                <td align="right" style="padding:10px;"><b>BANK (₹)</b></td>
+            </tr>
+            <tr>
+                <td style="padding:8px;">Maintenance Collection</td>
+                <td align="right" style="color:green;">+{int(maint_cash):,}</td>
+                <td align="right" style="color:green;">+{int(maint_bank):,}</td>
+            </tr>
+            <tr>
+                <td style="padding:8px;">Other Income (Donations/Int)</td>
+                <td align="right" style="color:green;">+{int(other_cash):,}</td>
+                <td align="right" style="color:green;">+{int(other_bank):,}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #ccc;">
+                <td style="padding:8px;">Total Monthly Expenses</td>
+                <td align="right" style="color:red;">-{int(exp_cash):,}</td>
+                <td align="right" style="color:red;">-{int(exp_bank):,}</td>
+            </tr>
+            <tr style="font-weight:bold; font-size: 1.1em; background-color: #f8f9fa;">
+                <td style="padding:10px;">Monthly Net Surplus</td>
+                <td align="right" style="padding:10px;">{int(maint_cash + other_cash - exp_cash):,}</td>
+                <td align="right" style="padding:10px;">{int(maint_bank + other_bank - exp_bank):,}</td>
+            </tr>
+        </table>
     </div>
     """, unsafe_allow_html=True)
 
-# --- TAB 4: ADD OTHER INCOME (ADMIN ONLY) ---
-if st.session_state.role == "admin":
-    with tabs[4]:
-        st.header("➕ Add Other Income")
-        st.warning("Note: Record Interest, Donations, or Festival funds here. Please update your Google Sheet 'Other_Income' tab for permanent records.")
-        with st.form("other_inc_form"):
-            date = st.date_input("Date")
-            source = st.text_input("Source (e.g., Bank Interest, Donation)")
-            amt = st.number_input("Amount", min_value=0)
-            mode = st.selectbox("Mode", ["Cash", "UPI", "Bank Transfer"])
-            rem = st.text_area("Remarks")
-            if st.form_submit_button("Preview Entry"):
-                st.success(f"Preview: {date} | {source} | ₹{amt} via {mode}")
+    st.subheader("🧾 Monthly Expense Breakdown")
+    if not m_exp.empty:
+        st.dataframe(m_exp[['date', 'head', 'amount', 'mode', 'remarks']], use_container_width=True, hide_index=True)
+    else:
+        st.info("No expenses recorded for this month.")
 
 # --- TAB 3: ADMIN ---
 with tabs[3]:
     if st.session_state.role == "admin":
         st.header("⚙️ Admin Controls")
-        if st.button("🔄 Refresh Data"):
+        if st.button("🔄 Refresh All Data"):
             st.cache_data.clear()
             st.rerun()
-
+        
         st.divider()
-        st.subheader("📑 Audit CSV Download")
-        csv_m = st.selectbox("Select Month for CSV", MONTHS_LIST, key="csv_sel")
+        st.subheader("📥 Data Backups")
+        csv_m = st.selectbox("Select Month for CSV Audit", MONTHS_LIST, key="csv_audit")
         audit_data = df_coll[df_coll['months_paid'].astype(str).str.contains(csv_m, case=False, na=False)]
         if not audit_data.empty:
-            csv = audit_data.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Download Transaction CSV", csv, f"DB_Audit_{csv_m}.csv", "text/csv")
+            st.download_button("Download Collection CSV", audit_data.to_csv(index=False).encode('utf-8'), f"DBE_Audit_{csv_m}.csv", "text/csv")
     else:
         st.warning("Admin Access Only")
