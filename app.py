@@ -4,12 +4,13 @@ import re
 import urllib.parse
 from datetime import datetime
 
-# ================= CONFIG & BENCHMARKS =================
+# ================= 1. CONFIG & BENCHMARKS =================
 MONTHLY_MAINT = 2100
-DEFAULTER_LIMIT = 6300  # Benchmark updated to 6300
-st.set_page_config(page_title="DBE Society Portal", layout="wide")
+DEFAULTER_LIMIT = 6300 
+# Sets the browser tab title
+st.set_page_config(page_title="DBE Maint Summery", layout="wide")
 
-# Theme & Scroller CSS
+# Custom CSS for UI and the Red Defaulter Scroller
 st.markdown("""
 <style>
     .main { background-color: #f8f9fa; }
@@ -31,7 +32,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ================= DATA LOADER =================
+# ================= 2. DATA LOADERS =================
 @st.cache_data(ttl=300)
 def load_data(sheet_name):
     try:
@@ -50,23 +51,18 @@ def clean_num(val):
     s = str(val).replace('₹', '').replace(',', '').replace(' ', '').strip()
     try: return float(s)
     except: return 0.0
-# ================= MAIN HEADING =================
-st.title("🏢 DBE Maint Summery") 
 
-# ================= AUTH SECTION =================
-if not st.session_state.authenticated:
-    # This ensures the heading "DBE Maint Summery" stays at the top during login
-    col1, col2 = st.columns([1.5, 1])
-    with col2:
-        st.subheader("🔐 Login")
-# ================= AUTH =================
+# ================= 3. AUTHENTICATION =================
 if "authenticated" not in st.session_state:
     st.session_state.authenticated, st.session_state.role = False, None
 
+# Main Page Heading
+st.title("🏢 DBE Maint Summery")
+
 if not st.session_state.authenticated:
-    st.title("🏢 DBE Maint Portal")
     _, login_col, _ = st.columns([1, 1, 1])
     with login_col:
+        st.subheader("🔐 Login")
         role = st.selectbox("Role", ["Viewer", "Admin"])
         pwd = st.text_input("Password", type="password")
         if st.button("Enter Portal"):
@@ -79,7 +75,7 @@ if not st.session_state.authenticated:
             else: st.error("❌ Invalid credentials")
     st.stop()
 
-# ================= DATA PREP =================
+# ================= 4. CORE CALCULATIONS =================
 df_owners = load_data("Owners")
 df_coll = load_data("Collections")
 df_exp = load_data("Expenses")
@@ -89,7 +85,6 @@ total_months = (current_date.year - 2025) * 12 + current_date.month
 MONTHS_LIST = [f"{m}-{y}" for y in [2025, 2026] for m in ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]]
 
 def get_financial_summary(c_df, e_df):
-    """Residual Logic: Ensures financial accuracy by treating non-cash as bank."""
     c_df['m'] = c_df['mode'].astype(str).str.strip().str.lower()
     e_df['m'] = e_df['mode'].astype(str).str.strip().str.lower()
     cash_in = c_df[c_df['m'] == 'cash']['amount_received'].apply(clean_num).sum()
@@ -98,10 +93,10 @@ def get_financial_summary(c_df, e_df):
     bank_out = e_df[e_df['m'] != 'cash']['amount'].apply(clean_num).sum()
     return (cash_in - cash_out), (bank_in - bank_out)
 
-# ================= TABS =================
+# ================= 5. APP TABS =================
 tabs = st.tabs(["📋 Dashboard", "🔍 Receipt Search", "📊 Financials", "⚙️ Admin Controls"])
 
-# --- TAB 0: MASTER & SCROLLER ---
+# --- TAB 0: DASHBOARD ---
 with tabs[0]:
     master_grid, defaulter_ticker = [], []
     for _, row in df_owners.iterrows():
@@ -116,16 +111,14 @@ with tabs[0]:
     if defaulter_ticker:
         ticker_text = "  🔥  OVERDUE NOTICE (₹6,300+):    " + "    ●    ".join(defaulter_ticker) + "    ●    "
         st.markdown(f'<div class="scroller-container"><marquee scrollamount="6">{ticker_text}</marquee></div>', unsafe_allow_html=True)
-    st.header("📋 Society Master List")
     st.dataframe(pd.DataFrame(master_grid).style.format({"Due": "₹{:,}"}), use_container_width=True, hide_index=True)
 
-# --- TAB 1: RECEIPT SEARCH ---
+# --- TAB 1: RECEIPTS ---
 with tabs[1]:
     st.header("🔍 Receipt Search")
     c1, c2 = st.columns(2)
     sel_f = c1.selectbox("Select Flat", sorted(df_owners['flat'].unique()))
     sel_m = c2.selectbox("Select Month", MONTHS_LIST, index=MONTHS_LIST.index(current_date.strftime("%b-%Y")))
-    
     m_data = df_coll[(df_coll['flat'] == sel_f) & (df_coll['months_paid'].astype(str).str.contains(sel_m, case=False, na=False))]
     paid_for_month = sum([clean_num(r['amount_received'])/max(len(str(r['months_paid']).split(',')),1) for _,r in m_data.iterrows()])
     
@@ -148,13 +141,12 @@ with tabs[2]:
     st.columns(3)[0].metric("💵 Cash", f"₹{int(cash):,}")
     st.columns(3)[1].metric("🏦 Bank", f"₹{int(bank):,}")
     st.columns(3)[2].metric("💰 Total", f"₹{int(cash + bank):,}")
-    st.dataframe(df_coll.tail(10), use_container_width=True, hide_index=True)
 
-# --- TAB 3: ADMIN (WITH DOWNLOAD REPORT) ---
+# --- TAB 3: ADMIN ---
 with tabs[3]:
     if st.session_state.role == "admin":
         st.header("⚙️ Admin Controls")
-        if st.button("🔄 Sync with Google Sheets"):
+        if st.button("🔄 Refresh Data"):
             st.cache_data.clear()
             st.rerun()
 
@@ -166,7 +158,6 @@ with tabs[3]:
             txt = f"*DBE {sel_bulk} Summary*\n" + "\n".join([f"• Flat {r['flat']}: ₹{int(clean_num(r['amount_received']))}" for _,r in bulk_data.iterrows()])
             st.code(txt); st.markdown(f'<a href="https://wa.me/?text={urllib.parse.quote(txt)}" target="_blank" class="wa-btn">Share Summary</a>', unsafe_allow_html=True)
 
-        # 📑 DOWNLOAD MONTHLY AUDIT REPORT (ADMIN ONLY)
         st.divider()
         st.subheader("📑 Audit & Backup")
         audit_col1, audit_col2 = st.columns([2, 1])
@@ -175,9 +166,7 @@ with tabs[3]:
         
         if not audit_coll.empty:
             csv = audit_coll[['date', 'flat', 'amount_received', 'mode', 'months_paid']].to_csv(index=False).encode('utf-8')
-            audit_col2.write(" ") # Padding
-            audit_col2.download_button(label="📥 Download CSV Report", data=csv, file_name=f"DBE_Audit_{sel_audit}.csv", mime="text/csv")
-        else:
-            st.info("No records found for audit download.")
+            audit_col2.write(" ")
+            audit_col2.download_button(label="📥 Download CSV", data=csv, file_name=f"DBE_Audit_{sel_audit}.csv", mime="text/csv")
     else:
         st.warning("Admin Access Only")
