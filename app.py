@@ -50,13 +50,21 @@ def clean_num(val):
     s = str(val).replace('₹', '').replace(',', '').replace(' ', '').strip()
     try: return float(s)
     except: return 0.0
+# ================= MAIN HEADING =================
+st.title("🏢 DBE Maint Summery") 
 
+# ================= AUTH SECTION =================
+if not st.session_state.authenticated:
+    # This ensures the heading "DBE Maint Summery" stays at the top during login
+    col1, col2 = st.columns([1.5, 1])
+    with col2:
+        st.subheader("🔐 Login")
 # ================= AUTH =================
 if "authenticated" not in st.session_state:
     st.session_state.authenticated, st.session_state.role = False, None
 
 if not st.session_state.authenticated:
-    st.title("🏢 DBE Residency Portal")
+    st.title("🏢 DBE Maint Portal")
     _, login_col, _ = st.columns([1, 1, 1])
     with login_col:
         role = st.selectbox("Role", ["Viewer", "Admin"])
