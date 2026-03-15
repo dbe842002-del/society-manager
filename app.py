@@ -9,7 +9,7 @@ MONTHLY_MAINT = 2100
 DEFAULTER_LIMIT = 6300 
 st.set_page_config(page_title="DBE Maint Summery", layout="wide")
 
-# Custom CSS for UI and the Red Defaulter Scroller
+# Custom CSS
 st.markdown("""
 <style>
     .main { background-color: #f8f9fa; }
@@ -81,22 +81,34 @@ if not st.session_state.authenticated:
 df_owners = load_data("Owners")
 df_coll = load_data("Collections")
 df_exp = load_data("Expenses")
+df_other = load_data("Other_Income") # New Sheet Needed: Other_Income
 
 current_date = datetime.now()
 total_months = (current_date.year - 2025) * 12 + current_date.month
 MONTHS_LIST = [f"{m}-{y}" for y in [2025, 2026] for m in ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]]
 
-def get_financial_summary(c_df, e_df):
-    c_df['m'] = c_df['mode'].astype(str).str.strip().str.lower()
-    e_df['m'] = e_df['mode'].astype(str).str.strip().str.lower()
-    cash_in = c_df[c_df['m'] == 'cash']['amount_received'].apply(clean_num).sum()
-    bank_in = c_df[c_df['m'] != 'cash']['amount_received'].apply(clean_num).sum()
-    cash_out = e_df[e_df['m'] == 'cash']['amount'].apply(clean_num).sum()
-    bank_out = e_df[e_df['m'] != 'cash']['amount'].apply(clean_num).sum()
+def get_financial_summary():
+    # Helper to clean and sum by mode
+    def sum_by_mode(df, amt_col, is_cash=True):
+        if df.empty: return 0.0
+        df['m_clean'] = df['mode'].astype(str).str.strip().str.lower()
+        if is_cash:
+            return df[df['m_clean'] == 'cash'][amt_col].apply(clean_num).sum()
+        return df[df['m_clean'] != 'cash'][amt_col].apply(clean_num).sum()
+
+    cash_in = sum_by_mode(df_coll, 'amount_received', True) + sum_by_mode(df_other, 'amount', True)
+    bank_in = sum_by_mode(df_coll, 'amount_received', False) + sum_by_mode(df_other, 'amount', False)
+    cash_out = sum_by_mode(df_exp, 'amount', True)
+    bank_out = sum_by_mode(df_exp, 'amount', False)
+    
     return (cash_in - cash_out), (bank_in - bank_out)
 
 # ================= 5. APP TABS =================
-tabs = st.tabs(["📋 Dashboard", "🔍 Receipt Search", "📊 Financials", "⚙️ Admin Controls"])
+tab_list = ["📋 Dashboard", "🔍 Receipt Search", "📊 Financials", "⚙️ Admin Controls"]
+if st.session_state.role == "admin":
+    tab_list.append("➕ Add Other Income")
+
+tabs = st.tabs(tab_list)
 
 # --- TAB 0: DASHBOARD ---
 with tabs[0]:
@@ -124,22 +136,17 @@ with tabs[1]:
     m_data = df_coll[(df_coll['flat'] == sel_f) & (df_coll['months_paid'].astype(str).str.contains(sel_m, case=False, na=False))]
     paid_for_month = sum([clean_num(r['amount_received'])/max(len(str(r['months_paid']).split(',')),1) for _,r in m_data.iterrows()])
     
-    total_paid_f = df_coll[df_coll['flat'] == sel_f]['amount_received'].apply(clean_num).sum()
-    bal_f = clean_num(df_owners[df_owners['flat'] == sel_f]['opening_due'].iloc[0]) + (total_months * MONTHLY_MAINT) - total_paid_f
+    bal_f = [x['Due'] for x in master_grid if x['Flat'] == sel_f][0]
     
     m1, m2, m3 = st.columns(3)
     m1.metric(f"Paid for {sel_m}", f"₹{int(paid_for_month):,}")
     m2.metric("Current Balance", f"₹{int(bal_f):,}")
     m3.metric("Owner", df_owners[df_owners['flat'] == sel_f]['owner'].iloc[0])
 
-    if st.session_state.role == "admin" and paid_for_month > 0:
-        msg = f"*DBE Receipt*\nFlat: {sel_f}\nMonth: {sel_m}\nPaid: ₹{int(paid_for_month):,}\nBal: ₹{int(bal_f):,}"
-        st.markdown(f'<a href="https://wa.me/?text={urllib.parse.quote(msg)}" target="_blank" class="wa-btn">Send WhatsApp</a>', unsafe_allow_html=True)
-
-# --- TAB 2: FINANCIALS & FULL REPORT (DBE v7 Style) ---
+# --- TAB 2: FINANCIALS & OTHER INCOME ---
 with tabs[2]:
     st.header("📊 Financial Position")
-    cur_cash, cur_bank = get_financial_summary(df_coll, df_exp)
+    cur_cash, cur_bank = get_financial_summary()
     
     m1, m2, m3 = st.columns(3)
     m1.metric("💵 Current Cash", f"₹{int(cur_cash):,}")
@@ -147,65 +154,51 @@ with tabs[2]:
     m3.metric("💰 Total Funds", f"₹{int(cur_cash + cur_bank):,}")
     
     st.divider()
+    st.subheader("💡 Other Income Received (Non-Maintenance)")
+    if not df_other.empty:
+        st.dataframe(df_other[['date', 'source', 'amount', 'mode', 'remarks']], use_container_width=True, hide_index=True)
+        st.info(f"Total Other Income: ₹{int(df_other['amount'].apply(clean_num).sum()):,}")
+    else:
+        st.info("No other income recorded yet.")
+
+    st.divider()
     st.subheader("🗓️ Monthly Audit Statement (v7)")
     sel_rep_m = st.selectbox("Select Report Month", MONTHS_LIST, index=MONTHS_LIST.index(current_date.strftime("%b-%Y")))
     
-    # Logic for Opening/Closing per Month
-    rep_idx = MONTHS_LIST.index(sel_rep_m)
-    past_months = MONTHS_LIST[:rep_idx]
-    
-    # Calculate Opening (Sum of all transactions BEFORE selected month)
-    df_coll['m_mode'] = df_coll['mode'].astype(str).str.strip().str.lower()
-    df_exp['m_mode'] = df_exp['mode'].astype(str).str.strip().str.lower()
-    
-    # Simple logic: If we don't have exact dates for every row, we filter by the 'months_paid' or 'date' string
-    # For a precise v7 report, we use 'date' column string matching or month names
-    def get_bal_upto(month_str, is_opening=True):
-        m_idx = MONTHS_LIST.index(month_str)
-        target_months = MONTHS_LIST[:m_idx] if is_opening else MONTHS_LIST[:m_idx+1]
-        
-        # This is a simplified calculation based on your flat maintenance logic
-        # For a 100% accurate daily cashbook, 'date' sorting is required
-        c_in = df_coll[df_coll['months_paid'].apply(lambda x: any(m in str(x) for m in target_months)) & (df_coll['m_mode'] == 'cash')]['amount_received'].apply(clean_num).sum()
-        b_in = df_coll[df_coll['months_paid'].apply(lambda x: any(m in str(x) for m in target_months)) & (df_coll['m_mode'] != 'cash')]['amount_received'].apply(clean_num).sum()
-        
-        c_out = df_exp[df_exp['date'].apply(lambda x: any(m in str(x) for m in target_months)) & (df_exp['m_mode'] == 'cash')]['amount'].apply(clean_num).sum()
-        b_out = df_exp[df_exp['date'].apply(lambda x: any(m in str(x) for m in target_months)) & (df_exp['m_mode'] != 'cash')]['amount'].apply(clean_num).sum()
-        
-        return (c_in - c_out), (b_in - b_out)
-
-    op_cash, op_bank = get_bal_upto(sel_rep_m, True)
-    cl_cash, cl_bank = get_bal_upto(sel_rep_m, False)
-    
-    # Monthly Activity
+    # Simple Monthly Activity Filter
     m_coll = df_coll[df_coll['months_paid'].astype(str).str.contains(sel_rep_m, case=False, na=False)]
+    m_other = df_other[df_other['date'].astype(str).str.contains(sel_rep_m, case=False, na=False)]
     m_exp = df_exp[df_exp['date'].astype(str).str.contains(sel_rep_m, case=False, na=False)]
     
-    cash_coll = m_coll[m_coll['m_mode'] == 'cash']['amount_received'].apply(clean_num).sum()
-    bank_coll = m_coll[m_coll['m_mode'] != 'cash']['amount_received'].apply(clean_num).sum()
+    cash_in_m = m_coll[m_coll['mode'].str.lower() == 'cash']['amount_received'].apply(clean_num).sum() + m_other[m_other['mode'].str.lower() == 'cash']['amount'].apply(clean_num).sum()
+    bank_in_m = m_coll[m_coll['mode'].str.lower() != 'cash']['amount_received'].apply(clean_num).sum() + m_other[m_other['mode'].str.lower() != 'cash']['amount'].apply(clean_num).sum()
     
-    cash_ex = m_exp[m_exp['m_mode'] == 'cash']['amount'].apply(clean_num).sum()
-    bank_ex = m_exp[m_exp['m_mode'] != 'cash']['amount'].apply(clean_num).sum()
+    cash_ex_m = m_exp[m_exp['mode'].str.lower() == 'cash']['amount'].apply(clean_num).sum()
+    bank_ex_m = m_exp[m_exp['mode'].str.lower() != 'cash']['amount'].apply(clean_num).sum()
 
     st.markdown(f"""
     <div class="audit-box">
-        <h4 style="text-align:center; color:#2d3436;">DBE Statement for {sel_rep_m}</h4>
+        <h4 style="text-align:center;">{sel_rep_m} Summary</h4>
+        <p><b>Total Collections (Maint + Other):</b> ₹{int(cash_in_m + bank_in_m):,}</p>
+        <p><b>Total Expenses:</b> ₹{int(cash_ex_m + bank_ex_m):,}</p>
         <hr>
-        <table style="width:100%; border-collapse: collapse;">
-            <tr style="background-color:#dfe6e9;"><td><b>PARTICULARS</b></td><td align="right"><b>CASH (₹)</b></td><td align="right"><b>BANK (₹)</b></td></tr>
-            <tr><td>Opening Balance</td><td align="right">{int(op_cash):,}</td><td align="right">{int(op_bank):,}</td></tr>
-            <tr><td>(+) Maintenance Collection</td><td align="right" style="color:green;">{int(cash_coll):,}</td><td align="right" style="color:green;">{int(bank_coll):,}</td></tr>
-            <tr><td>(-) Monthly Expenses</td><td align="right" style="color:red;">{int(cash_ex):,}</td><td align="right" style="color:red;">{int(bank_ex):,}</td></tr>
-            <tr style="border-top:2px solid #2d3436; font-weight:bold;"><td>Closing Balance</td><td align="right">{int(cl_cash):,}</td><td align="right">{int(cl_bank):,}</td></tr>
-        </table>
+        <p style="font-size:18px;"><b>Net Monthly Surplus: ₹{int((cash_in_m + bank_in_m) - (cash_ex_m + bank_ex_m)):,}</b></p>
     </div>
     """, unsafe_allow_html=True)
 
-    st.subheader("🧾 Detailed Expense Report")
-    if not m_exp.empty:
-        st.dataframe(m_exp[['date', 'head', 'amount', 'mode']], use_container_width=True, hide_index=True)
-    else:
-        st.info("No expenses recorded for this month.")
+# --- TAB 4: ADD OTHER INCOME (ADMIN ONLY) ---
+if st.session_state.role == "admin":
+    with tabs[4]:
+        st.header("➕ Add Other Income")
+        st.warning("Note: Record Interest, Donations, or Festival funds here. Please update your Google Sheet 'Other_Income' tab for permanent records.")
+        with st.form("other_inc_form"):
+            date = st.date_input("Date")
+            source = st.text_input("Source (e.g., Bank Interest, Donation)")
+            amt = st.number_input("Amount", min_value=0)
+            mode = st.selectbox("Mode", ["Cash", "UPI", "Bank Transfer"])
+            rem = st.text_area("Remarks")
+            if st.form_submit_button("Preview Entry"):
+                st.success(f"Preview: {date} | {source} | ₹{amt} via {mode}")
 
 # --- TAB 3: ADMIN ---
 with tabs[3]:
