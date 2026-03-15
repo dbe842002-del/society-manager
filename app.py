@@ -148,14 +148,7 @@ with tabs[1]:
     st.subheader("📜 Payment History")
     hist = df_coll[df_coll['flat'] == sel][['date', 'months_paid', 'amount_received', 'mode']]
     st.dataframe(hist.sort_values('date', ascending=False) if not hist.empty else pd.DataFrame(), use_container_width=True, hide_index=True)
-# Inside Tab 1
-if st.session_state.role == "admin":
-if st.button("📲 Send WhatsApp Receipt"):
-    msg = f"*DBE Residency Receipt*\n---\n*Flat:* {sel}\n*Amount:* ₹{int(paid):,}\n*Balance:* ₹{int(bal):,}"
-    encoded_msg = urllib.parse.quote(msg)
-    # If you have owner phone numbers in df_owners, use them here
-    wa_url = f"https://wa.me/?text={encoded_msg}" 
-    st.markdown(f'<a href="{wa_url}" target="_blank">Click here to send via WhatsApp</a>', unsafe_allow_html=True)
+
 # ================= TAB 2: FINANCIALS =================
 with tabs[2]:
     st.header("📊 Financial Reports")
