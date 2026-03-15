@@ -214,6 +214,25 @@ with tabs[2]:
         st.info(f"Total for {sel_month_ex} {sel_year_ex}: ₹{int(month_data['amount_val'].sum()):,}")
     else:
         st.warning(f"No expense data recorded for {sel_month_ex} {sel_year_ex}")
+def get_monthly_attributed_income(df_coll, target_month_str):
+    """
+    Calculates income attributed to a specific maintenance month 
+    by splitting advance payments.
+    """
+    if df_coll.empty: return 0.0
+    
+    # Filter rows where the target month (e.g., 'Jan-2026') is in 'months_paid'
+    mask = df_coll['months_paid'].astype(str).str.contains(target_month_str, case=False, na=False)
+    relevant_payments = df_coll[mask]
+    
+    attributed_total = 0.0
+    for _, row in relevant_payments.iterrows():
+        full_amt = clean_num(row['amount_received'])
+        months_list = str(row['months_paid']).split(',')
+        num_months = len([m for m in months_list if m.strip()])
+        attributed_total += (full_amt / max(num_months, 1))
+        
+    return attributed_total
 
 # ================= ADMIN TABS =================
 if st.session_state.role == "admin":
