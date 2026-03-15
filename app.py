@@ -4,254 +4,95 @@ import re
 import urllib.parse
 from datetime import datetime
 
-# ================= CONFIG =================
+# 1. SETUP & BENCHMARKS
 MONTHLY_MAINT = 2100
+DEFAULTER_LIMIT = 6300 
 st.set_page_config(page_title="DBE Society Portal", layout="wide")
 
-# ================= THEME =================
-st.markdown("""
-<style>
-.main { background-color: #f8f9fa; }
-div[data-testid="stMetric"] {
-    background-color: #ffffff; border: 1px solid #e0e0e0;
-    padding: 15px; border-radius: 10px;
-    box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
-}
-.defaulter-card {
-    background-color: #fff5f5; border: 1px solid #feb2b2;
-    padding: 20px; border-radius: 10px; margin-bottom: 20px;
-    text-align: center; border-left: 5px solid #f56565;
-}
-.stTabs [data-baseweb="tab-list"] { gap: 10px; }
-.stTabs [data-baseweb="tab"] { 
-    background-color: #f0f2f6; border-radius: 5px; padding: 10px; font-weight: bold;
-}
-.stTabs [aria-selected="true"] { background-color: #007bff !important; color: white !important; }
-section[data-testid="stSidebar"] > div { display: none !important; }
-[data-testid="collapsedControl"], [data-testid="stToolbar"] { display: none !important; }
-#MainMenu, header, footer { visibility: hidden !important; height: 0 !important; }
-</style>
-""", unsafe_allow_html=True)
+st.markdown("""<style>.main { background-color: #f8f9fa; } 
+.scroller-container { background-color: #d63031; color: white; padding: 12px; border-radius: 8px; margin-bottom: 25px; font-weight: bold; border-left: 10px solid #2d3436; }
+div[data-testid="stMetric"] { background-color: #ffffff; border: 1px solid #e0e0e0; padding: 15px; border-radius: 10px; box-shadow: 2px 2px 5px rgba(0,0,0,0.05); }
+.wa-btn { background-color: #25D366; color: white !important; padding: 8px 16px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-flex; align-items: center; gap: 8px; }</style>""", unsafe_allow_html=True)
 
-# ================= DATA LOADER =================
+# 2. DATA ENGINE
 @st.cache_data(ttl=300)
 def load_data(sheet_name):
     try:
-        base_url = st.secrets.get("connections", {}).get("gsheets", {}).get("spreadsheet", "")
+        base_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
         sheet_id = re.search(r"/d/([a-zA-Z0-9-_]+)", base_url).group(1)
         url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={sheet_name}"
         df = pd.read_csv(url)
         df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
         return df
-    except:
-        return pd.DataFrame()
+    except: return pd.DataFrame()
 
 def clean_num(val):
-    if pd.isna(val) or val == "": return 0.0
-    if isinstance(val, (int, float)): return float(val)
-    s = str(val).replace('₹', '').replace(',', '').replace(' ', '').strip()
-    try: return float(s)
+    try: return float(str(val).replace('₹','').replace(',','').strip())
     except: return 0.0
 
-# ================= AUTH =================
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated, st.session_state.role = False, None
-
+# 3. LOGIN
+if "authenticated" not in st.session_state: st.session_state.authenticated, st.session_state.role = False, None
 if not st.session_state.authenticated:
     st.title("🏢 DBE Residency Portal")
-    col1, col2 = st.columns([1.5, 1])
-    with col2:
-        st.subheader("🔐 Login")
-        role = st.selectbox("Role", ["Viewer", "Admin"])
-        pwd = st.text_input("Password", type="password")
-        if st.button("Enter Portal"):
-            if role == "Admin" and pwd == st.secrets.get("admin_password", "admin123"):
-                st.session_state.authenticated, st.session_state.role = True, "admin"
-                st.rerun()
-            elif role == "Viewer" and pwd == st.secrets.get("view_password", "society123"):
-                st.session_state.authenticated, st.session_state.role = True, "viewer"
-                st.rerun()
-            else: st.error("❌ Invalid credentials")
+    role = st.selectbox("Role", ["Viewer", "Admin"])
+    pwd = st.text_input("Password", type="password")
+    if st.button("Enter Portal"):
+        if role == "Admin" and pwd == st.secrets.get("admin_password", "admin123"):
+            st.session_state.authenticated, st.session_state.role = True, "admin"
+            st.rerun()
+        elif role == "Viewer" and pwd == st.secrets.get("view_password", "society123"):
+            st.session_state.authenticated, st.session_state.role = True, "viewer"
+            st.rerun()
     st.stop()
 
-# ================= DATA PREP =================
-df_owners = load_data("Owners")
-df_coll = load_data("Collections")
-df_exp = load_data("Expenses")
+# 4. LOGIC
+df_owners, df_coll, df_exp = load_data("Owners"), load_data("Collections"), load_data("Expenses")
+total_months = (datetime.now().year - 2025) * 12 + datetime.now().month
+MONTHS = [f"{m}-{y}" for y in [2025, 2026] for m in ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]]
 
-current_date = datetime.now()
-total_months = (current_date.year - 2025) * 12 + current_date.month
+def get_fin(c_df, e_df):
+    c_df['m'] = c_df['mode'].astype(str).str.strip().str.lower()
+    e_df['m'] = e_df['mode'].astype(str).str.strip().str.lower()
+    cash = c_df[c_df['m']=='cash']['amount_received'].apply(clean_num).sum() - e_df[e_df['m']=='cash']['amount'].apply(clean_num).sum()
+    bank = c_df[c_df['m']!='cash']['amount_received'].apply(clean_num).sum() - e_df[e_df['m']!='cash']['amount'].apply(clean_num).sum()
+    return cash, bank
 
-# ================= TABS =================
-if st.session_state.role == "admin":
-    tabs = st.tabs(["📋 Master", "🔍 Lookup", "📊 Financials", "⚙️ Admin", "➕ Add"])
-else:
-    tabs = st.tabs(["📋 Master", "🔍 Lookup", "📊 Financials"])
+# 5. UI TABS
+t = st.tabs(["📋 Dashboard", "🔍 Receipts", "📊 Financials", "⚙️ Admin"])
 
-# ================= TAB 0: MASTER =================
-with tabs[0]:
-    st.header("📋 Society Master Dashboard")
-    master_grid = []
-    defaulters, total_due_val = 0, 0
-    
-    for _, row in df_owners.iterrows():
-        f = row.get('flat', 'N/A')
-        paid = df_coll[df_coll['flat'] == f]['amount_received'].apply(clean_num).sum()
-        opening = clean_num(row.get('opening_due', 0))
-        due = opening + (total_months * MONTHLY_MAINT) - paid
-        total_due_val += due
-        if due > 6300: defaulters += 1
-        master_grid.append({"Flat": f, "Owner": row.get('owner', 'N/A'), "Due": int(due)})
+with t[0]:
+    grid, tick = [], []
+    for _, r in df_owners.iterrows():
+        f = r.get('flat','N/A')
+        due = clean_num(r.get('opening_due',0)) + (total_months * MONTHLY_MAINT) - df_coll[df_coll['flat']==f]['amount_received'].apply(clean_num).sum()
+        grid.append({"Flat": f, "Owner": r.get('owner','N/A'), "Due": int(due)})
+        if due >= DEFAULTER_LIMIT: tick.append(f"FLAT {f}: ₹{int(due):,}")
+    if tick: st.markdown(f'<div class="scroller-container"><marquee scrollamount="6">🔥 OVERDUE: {" ● ".join(tick)}</marquee></div>', unsafe_allow_html=True)
+    st.dataframe(pd.DataFrame(grid).style.format({"Due": "₹{:,}"}), use_container_width=True, hide_index=True)
 
-    c1, c2 = st.columns([2, 1])
-    c1.markdown(f'<div class="defaulter-card"><h3>Overdue Alert</h3><h1>{defaulters}</h1><p>Due > ₹6,300</p></div>', unsafe_allow_html=True)
-    c2.metric("Total Flats", len(df_owners))
-    c2.metric("Total Owed", f"₹{int(total_due_val):,}")
+with t[1]:
+    sf = st.selectbox("Flat", sorted(df_owners['flat'].unique()))
+    sm = st.selectbox("Month", MONTHS, index=MONTHS.index(datetime.now().strftime("%b-%Y")))
+    m_pay = df_coll[(df_coll['flat']==sf) & (df_coll['months_paid'].astype(str).str.contains(sm, case=False))]
+    portion = sum([clean_num(r['amount_received'])/max(len(str(r['months_paid']).split(',')),1) for _,r in m_pay.iterrows()])
+    bal = [x['Due'] for x in grid if x['Flat']==sf][0]
+    st.metric(f"Paid for {sm}", f"₹{int(portion):,}")
+    st.metric("Balance", f"₹{int(bal):,}")
+    if st.session_state.role=="admin" and portion>0:
+        msg = f"*DBE Receipt*\nFlat: {sf}\nMonth: {sm}\nPaid: ₹{int(portion):,}\nBal: ₹{int(bal):,}"
+        st.markdown(f'<a href="https://wa.me/?text={urllib.parse.quote(msg)}" target="_blank" class="wa-btn">WhatsApp Receipt</a>', unsafe_allow_html=True)
 
-    df_m = pd.DataFrame(master_grid)
-    def color_due_col(val):
-        if val > 6300: return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
-        if val > 0: return 'background-color: #fff3cd; color: #856404;'
-        return 'background-color: #d4edda; color: #155724;'
+with t[2]:
+    c, b = get_fin(df_coll, df_exp)
+    st.metric("💵 Cash", f"₹{int(c):,}"); st.metric("🏦 Bank", f"₹{int(b):,}")
+    st.dataframe(df_coll.tail(10), use_container_width=True)
 
-    if not df_m.empty:
-        styled_master = df_m.style.applymap(color_due_col, subset=['Due']).format({"Due": "₹{:,}"})
-        st.dataframe(styled_master, use_container_width=True, hide_index=True)
-
-# ================= TAB 1: LOOKUP =================
-with tabs[1]:
-    st.header("🔍 Flat Status Lookup")
-    flat_list = sorted(df_owners['flat'].dropna().unique())
-    sel = st.selectbox("Select Flat", flat_list)
-    
-    owner_row = df_owners[df_owners['flat'] == sel].iloc[0]
-    paid = df_coll[df_coll['flat'] == sel]['amount_received'].apply(clean_num).sum()
-    bal = clean_num(owner_row.get('opening_due', 0)) + (total_months * MONTHLY_MAINT) - paid
-    
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Balance Due", f"₹{int(bal):,}")
-    m2.metric("Owner", str(owner_row.get('owner', 'N/A')))
-    m3.metric("Total Paid", f"₹{int(paid):,}")
-    
-    if st.button("Generate WhatsApp Receipt"):
-        receipt_text = f"""
-*DBE Enclave Receipt*
------------------------
-*Flat:* {sel}
-*Owner:* {owner_row.get('owner')}
-*Amount Paid:* ₹{int(paid):,}
-*Current Balance:* ₹{int(bal):,}
-*Date:* {datetime.now().strftime('%d-%m-%Y')}
-"""
-        st.code(receipt_text, language="markdown")
-
-    st.subheader("📜 Payment History")
-    hist = df_coll[df_coll['flat'] == sel][['date', 'months_paid', 'amount_received', 'mode']]
-    st.dataframe(hist.sort_values('date', ascending=False) if not hist.empty else pd.DataFrame(), use_container_width=True, hide_index=True)
-
-# ================= TAB 2: FINANCIALS =================
-with tabs[2]:
-    st.header("📊 Financial Reports")
-    
-    df_c_local = df_coll.copy()
-    df_e_local = df_exp.copy()
-
-    if not df_c_local.empty:
-        df_c_local['date_dt'] = pd.to_datetime(df_c_local['date'], dayfirst=True, errors='coerce')
-        df_c_local['amount_val'] = df_c_local['amount_received'].apply(clean_num)
-    else:
-        df_c_local = pd.DataFrame(columns=['date', 'amount_received', 'mode', 'date_dt', 'amount_val'])
-
-    if not df_e_local.empty:
-        df_e_local['date_dt'] = pd.to_datetime(df_e_local['date'], dayfirst=True, errors='coerce')
-        df_e_local['amount_val'] = df_e_local['amount'].apply(clean_num)
-        df_e_local['year_int'] = df_e_local['date_dt'].dt.year
-        df_e_local['month_str'] = df_e_local['date_dt'].dt.strftime('%B')
-    else:
-        df_e_local = pd.DataFrame(columns=['date', 'head', 'amount', 'mode', 'date_dt', 'amount_val', 'year_int', 'month_str'])
-
-    st.subheader("🏦 Cash & Bank Balance")
-    
-def get_totals(df, col):
-    if df.empty or col not in df.columns: 
-        return 0.0, 0.0
-    
-    # Standardize the mode column for comparison
-    df['mode_clean'] = df['mode'].astype(str).str.strip().str.lower()
-    
-    # Cash is ONLY when mode is exactly 'cash'
-    cash_mask = df['mode_clean'] == 'cash'
-    cash_total = df[cash_mask][col].sum()
-    
-    # Bank is everything else that isn't cash (Online, Cheque, UPI, etc.)
-    bank_total = df[~cash_mask][col].sum()
-    
-    return float(cash_total), float(bank_total)
-
-    c_in, b_in = get_totals(df_c_local, 'amount_val')
-    c_out, b_out = get_totals(df_e_local, 'amount_val')
-
-    l1, l2, l3 = st.columns(3)
-    l1.metric("💵 Cash on Hand", f"₹{int(c_in - c_out):,}")
-    l2.metric("🏦 Bank Balance", f"₹{int(b_in - b_out):,}")
-    l3.metric("💰 Total Liquidity", f"₹{int((c_in + b_in) - (c_out + b_out)):,}")
-
-    st.divider()
-    st.subheader("📅 Monthly Expense Drill-down")
-    
-    data_years = df_e_local['year_int'].dropna().unique().astype(int).tolist()
-    combined_years = sorted(list(set(data_years + [2025, 2026])), reverse=True)
-    
-    ex_col1, ex_col2 = st.columns(2)
-    sel_year_ex = ex_col1.selectbox("Select Year", combined_years, key="exp_yr")
-    available_months = df_e_local[df_e_local['year_int'] == sel_year_ex]['month_str'].unique()
-    month_list = list(available_months) if len(available_months) > 0 else ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
-    sel_month_ex = ex_col2.selectbox("Select Month", month_list)
-
-    month_data = df_e_local[(df_e_local['year_int'] == sel_year_ex) & (df_e_local['month_str'] == sel_month_ex)]
-    
-    if not month_data.empty:
-        st.dataframe(month_data[['date', 'head', 'amount', 'mode']], use_container_width=True, hide_index=True)
-        st.info(f"Total for {sel_month_ex} {sel_year_ex}: ₹{int(month_data['amount_val'].sum()):,}")
-    else:
-        st.warning(f"No expense data recorded for {sel_month_ex} {sel_year_ex}")
-def get_monthly_attributed_income(df_coll, target_month_str):
-    """
-    Calculates income attributed to a specific maintenance month 
-    by splitting advance payments.
-    """
-    if df_coll.empty: return 0.0
-    
-    # Filter rows where the target month (e.g., 'Jan-2026') is in 'months_paid'
-    mask = df_coll['months_paid'].astype(str).str.contains(target_month_str, case=False, na=False)
-    relevant_payments = df_coll[mask]
-    
-    attributed_total = 0.0
-    for _, row in relevant_payments.iterrows():
-        full_amt = clean_num(row['amount_received'])
-        months_list = str(row['months_paid']).split(',')
-        num_months = len([m for m in months_list if m.strip()])
-        attributed_total += (full_amt / max(num_months, 1))
-        
-    return attributed_total
-
-# ================= ADMIN TABS =================
-if st.session_state.role == "admin":
-    with tabs[3]:
-        st.header("⚙️ Admin")
-        if st.button("🔄 Refresh Data"):
-            st.cache_data.clear()
-            st.rerun()
-        st.dataframe(load_data(st.selectbox("View Sheet", ["Owners", "Collections", "Expenses"])))
-
-    with tabs[4]:
-        st.header("➕ Add New Entry")
-        st.info("Direct write-back is currently disabled. Please update the Google Sheet directly.")
-        with st.form("entry_form"):
-            t = st.radio("Type", ["Income", "Expense"])
-            a = st.number_input("Amount", min_value=0)
-            if st.form_submit_button("Submit (Preview Only)"):
-                st.write(f"Record for ₹{a} created in preview mode.")
-
-st.markdown("---")
-st.caption("DBE Society Management Portal v2.1")
+with t[3]:
+    if st.session_state.role=="admin":
+        if st.button("🔄 Refresh Data"): st.cache_data.clear(); st.rerun()
+        sb = st.selectbox("Bulk Month", MONTHS, index=MONTHS.index(datetime.now().strftime("%b-%Y")))
+        b_data = df_coll[df_coll['months_paid'].astype(str).str.contains(sb, case=False)]
+        if not b_data.empty:
+            txt = f"*DBE {sb} Summary*\n" + "\n".join([f"• {r['flat']}: ₹{int(clean_num(r['amount_received']))}" for _,r in b_data.iterrows()])
+            st.code(txt); st.markdown(f'<a href="https://wa.me/?text={urllib.parse.quote(txt)}" target="_blank" class="wa-btn">Share Summary</a>', unsafe_allow_html=True)
+    else: st.warning("Admin Only")
