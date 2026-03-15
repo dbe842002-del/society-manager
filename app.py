@@ -135,7 +135,7 @@ with tabs[1]:
     
     if st.button("Generate WhatsApp Receipt"):
         receipt_text = f"""
-*DBE Residency Receipt*
+*DBE Enclave Receipt*
 -----------------------
 *Flat:* {sel}
 *Owner:* {owner_row.get('owner')}
@@ -149,6 +149,7 @@ with tabs[1]:
     hist = df_coll[df_coll['flat'] == sel][['date', 'months_paid', 'amount_received', 'mode']]
     st.dataframe(hist.sort_values('date', ascending=False) if not hist.empty else pd.DataFrame(), use_container_width=True, hide_index=True)
 # Inside Tab 1
+if st.session_state.role == "admin":
 if st.button("📲 Send WhatsApp Receipt"):
     msg = f"*DBE Residency Receipt*\n---\n*Flat:* {sel}\n*Amount:* ₹{int(paid):,}\n*Balance:* ₹{int(bal):,}"
     encoded_msg = urllib.parse.quote(msg)
