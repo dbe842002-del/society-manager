@@ -96,3 +96,30 @@ with t[3]:
             txt = f"*DBE {sb} Summary*\n" + "\n".join([f"• {r['flat']}: ₹{int(clean_num(r['amount_received']))}" for _,r in b_data.iterrows()])
             st.code(txt); st.markdown(f'<a href="https://wa.me/?text={urllib.parse.quote(txt)}" target="_blank" class="wa-btn">Share Summary</a>', unsafe_allow_html=True)
     else: st.warning("Admin Only")
+        # 3. DOWNLOAD MONTHLY AUDIT REPORT (ADMIN ONLY)
+        st.divider()
+        st.subheader("📑 Audit & Backup")
+        audit_col1, audit_col2 = st.columns([2, 1])
+        
+        sel_audit = audit_col1.selectbox("Select Month for Audit", MONTHS_LIST, 
+                                        index=MONTHS_LIST.index(current_date.strftime("%b-%Y")), 
+                                        key="audit_sel")
+        
+        # Filter collections for the selected month
+        audit_coll = df_coll[df_coll['months_paid'].astype(str).str.contains(sel_audit, case=False, na=False)]
+        
+        if not audit_coll.empty:
+            # Create a clean CSV string
+            csv = audit_coll[['date', 'flat', 'amount_received', 'mode', 'months_paid']].to_csv(index=False).encode('utf-8')
+            
+            audit_col2.write(" ") # Alignment
+            audit_col2.write(" ") # Alignment
+            audit_col2.download_button(
+                label="📥 Download CSV Report",
+                data=csv,
+                file_name=f"DBE_Audit_{sel_audit}.csv",
+                mime="text/csv",
+                help="Download all transaction records for this month as an Excel-compatible file."
+            )
+        else:
+            st.info("No records found to download for this month.")
