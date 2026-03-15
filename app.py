@@ -172,11 +172,20 @@ with tabs[2]:
     st.subheader("🏦 Cash & Bank Balance")
     
     def get_totals(df, col):
-        if df.empty or col not in df.columns: return 0.0, 0.0
-        modes = df['mode'].astype(str).str.lower()
-        cash = df[modes.str.contains('cash', na=False)][col].sum()
-        bank = df[modes.str.contains('bank|upi|transfer|online|neft', na=False)][col].sum()
-        return cash, bank
+    if df.empty or col not in df.columns: 
+        return 0.0, 0.0
+    
+    # Standardize the mode column for comparison
+    df['mode_clean'] = df['mode'].astype(str).str.strip().str.lower()
+    
+    # Cash is ONLY when mode is exactly 'cash'
+    cash_mask = df['mode_clean'] == 'cash'
+    cash_total = df[cash_mask][col].sum()
+    
+    # Bank is everything else that isn't cash (Online, Cheque, UPI, etc.)
+    bank_total = df[~cash_mask][col].sum()
+    
+    return float(cash_total), float(bank_total)
 
     c_in, b_in = get_totals(df_c_local, 'amount_val')
     c_out, b_out = get_totals(df_e_local, 'amount_val')
