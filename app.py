@@ -178,7 +178,7 @@ with tabs[2]:
 
     st.subheader("🏦 Cash & Bank Balance")
     
-    def get_totals(df, col):
+def get_totals(df, col):
     if df.empty or col not in df.columns: 
         return 0.0, 0.0
     
